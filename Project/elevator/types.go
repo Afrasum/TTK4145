@@ -1,35 +1,42 @@
 package elevator
 
-type ElevatorId = int
-
 const (
-	Elevator1 ElevatorId = 1
-	Elevator2 ElevatorId = 2
-	Elevator3 ElevatorId = 3
+	N_FLOORS  = 4
+	N_BUTTONS = 3
 )
 
-type Floor = int
-
-const (
-	Floor0 Floor = 0
-	Floor1 Floor = 1
-	Floor2 Floor = 2
-	Floor3 Floor = 3
+type (
+	Direction  int
+	Behavior   int
+	ButtonType int
 )
 
-type Elevator struct {
-	ID          ElevatorId
-	Floor       int
-	Direction   bool
-	IsIdle      bool
-	CabOrders   [4]bool
-	Obstruction bool
-	StopButton  bool
-	IsAlive     bool
-	DoorOpen    bool
+const (
+	DirUp Direction = iota
+	DirDown
+	DirStop
+)
+
+const (
+	ElevatorBehaviorMoving Behavior = iota
+	ElevatorBehaviorIdle
+	ElevatorBehaviorDoorOpen
+)
+
+const (
+	ButtonHallUp ButtonType = iota
+	ButtonHallDown
+	ButtonCab
+)
+
+type DirectionBehaviorPair struct {
+	Direction Direction
+	Behavior  Behavior
 }
 
-type HallOrders struct {
-	Up   [4]bool
-	Down [4]bool
+type Elevator struct {
+	Floor     int
+	Direction Direction
+	Behavior  Behavior
+	Requests  [N_FLOORS][N_BUTTONS]bool
 }
