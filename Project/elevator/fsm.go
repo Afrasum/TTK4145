@@ -1,138 +1,91 @@
-package fsm
+package elevator
 
-import (
-	"fsm"
-	"elevator"
-	"time"
-)
+import "Driver-go/elevio"
 
-
-
-// set all lights according to the current requests.
-func setAllLights(e Elevator) {
-
-
-	for floor := 0; floor < N_FLOORS; floor++ {
-		for btn := 0; btn < N_BUTTONS; btn++ {
-			elevatorRequestButtonLight(floor, btn, e.Requests[floor][btn])
+func setAllLights(es Elevator) {
+	for floor := range N_FLOORS {
+		for button := range N_BUTTONS {
+			elevio.SetButtonLamp(elevio.ButtonType(button), floor, es.Requests[floor][button])
 		}
-
 	}
 }
 
+func dirToMotor(d Direction) elevio.MotorDirection {
+	switch d {
+	case DirUp:
+		return elevio.MD_Up
+	case DirDown:
+		return elevio.MD_Down
+	default:
+		return elevio.MD_Stop
+	}
+}
 
-// initialize the elevator state machine. 
-// called at the start of the program, all elevators are driven to first floor
 func FsmOnInitBetweenFloors(e *Elevator) {
-	elevatorMotorDirection(DirDown)
-	e.direction = DirDown
-	e.behavior = ElevatorBehaviorMoving
-
+	elevio.SetMotorDirection(elevio.MD_Down)
+	e.Direction = DirDown
+	e.Behavior = ElevatorBehaviorMoving
 }
 
-//allocate request to elevator 
-func FsmOnrequestButtonPressed(e *Elevator, floor int, btn ButtonType) {
-	fmt.println("Button pressed: ", floor, btn)
-	elevatorPrint(*e)
+func FsmOnFloorArrival(e *Elevator, newFloor int) (startTimer bool) {
+	e.Floor = newFloor
+	elevio.SetFloorIndicator(e.Floor)
 
-	switch  e.behavior {
+	if e.Behavior == ElevatorBehaviorMoving && requestsShouldStop(*e) {
+		elevio.SetMotorDirection(elevio.MD_Stop)
+		elevio.SetDoorOpenLamp(true)
+		*e = requestsClearAtCurrentFloor(*e)
+		setAllLights(*e)
+		e.Behavior = ElevatorBehaviorDoorOpen
+		return true
+	}
+	return false
+}
 
-	case elevatorBehaviorIdle:
-		e.requests[floor][btn] = true
-		pair := requestsChooseDirection(*e)
-		e.direction = pair.Direction
-		e.behavior = pair.Behavior
-
-		switch pair.behavior {
-			
-		case elevatorBehaviorMoving:
-			elevatorMotorDirection(e.direction)
-		case elevatorBehaviorDoorOpen:
-			elevatorDoorOpenLight(true)
-			timerStart(e.Config.doorOpenTime)
-			*e = requestsClearAtCurrentFloor(*e)
-
-		case elevatorBehaviorIdle:
-			// do nothing 
-		}
-		
-
-
-
-
-	case elevatorBehaviorMoving:
-		e.requests[floor][btn] = true
-
-	
-	
-	case elevatorBehaviorDoorOpen:
-		if requestShouldClearImmediately(*e, btnFloor, btnType) {
-
-		timerStart(e.Config.doorOpenTime)
-		} else{
-			e.requests[floor][btn] = true
-		}
-		
-		
+func FsmOnDoorTimeout(e *Elevator) (startTimer bool) {
+	if e.Behavior != ElevatorBehaviorDoorOpen {
+		return false
 	}
 
-	setAllLights(*e)
-	fmt.println("New state: ")
-	elevatorPrint(*e)
-}
-
-
-//Arrival on floor 
-func FsmOnFloorArrival(e *Elevator, newFloor int) {
-	fmt.println("Arrived at floor: ", newFloor)
-	elevatorPrint(*e)
-	e.floor = newFloor
-	elevatorFloorIndicator(e.floor)
+	pair := requestsChooseDirection(*e)
+	e.Direction = pair.Direction
+	e.Behavior = pair.Behavior
 
 	switch e.Behavior {
+	case ElevatorBehaviorDoorOpen:
+		*e = requestsClearAtCurrentFloor(*e)
+		setAllLights(*e)
+		return true
+	case ElevatorBehaviorMoving, ElevatorBehaviorIdle:
+		elevio.SetDoorOpenLamp(false)
+		elevio.SetMotorDirection(dirToMotor(e.Direction))
+	}
+	return false
+}
 
-		case elevatorBehaviorMoving:
-			if elevatorShouldStop(*e) {
-				elevatorMotorDirection(DirStop)
-				elevatorDoorOpenLight(true)
-				*e = requestsClearAtCurrentFloor(*e)
-				timerStart(e.Config.doorOpenTime)
-				setAllLights(*e)
-				e.behavior = ElevatorBehaviorDoorOpen
-			}
-
+func FsmOnRequestButtonPress(e *Elevator, btnFloor int, btnType ButtonType) (startTimer bool) {
+	switch e.Behavior {
+	case ElevatorBehaviorDoorOpen:
+		if requestsShouldClearImmediately(*e, btnFloor, btnType) {
+			return true
 		}
-	fmt.println("New state: ")
-	elevatorPrint(*e)
-}
-
-
-
-//Door timeout
-func FsmOnDoorTimeout(e *Elevator) {
-	fmt.println("Door timeout")
-	elevatorPrint(*e)
-
-	switch e.Behavior {
-
-	case elevatorBehaviorDoorOpen:
+		e.Requests[btnFloor][btnType] = true
+	case ElevatorBehaviorMoving:
+		e.Requests[btnFloor][btnType] = true
+	case ElevatorBehaviorIdle:
+		e.Requests[btnFloor][btnType] = true
 		pair := requestsChooseDirection(*e)
 		e.Direction = pair.Direction
 		e.Behavior = pair.Behavior
-
-		switch e.Behavior {
-		case elevatorBehaviorDoorOpen:
-			timerStart(e.Config.doorOpenTime)
+		switch pair.Behavior {
+		case ElevatorBehaviorDoorOpen:
+			elevio.SetDoorOpenLamp(true)
 			*e = requestsClearAtCurrentFloor(*e)
-			setAllLights(*e)
-
-		case elevatorBehaviorMoving, elevatorBehaviorIdle:
-			elevatorDoorOpenLight(false)
-			elevatorMotorDirection(e.Direction)
-			
+			startTimer = true
+		case ElevatorBehaviorMoving:
+			elevio.SetMotorDirection(dirToMotor(e.Direction))
 		}
-
 	}
-	fmt.println("New state: ")
-	elevatorPrint(*e)
+	setAllLights(*e)
+	return startTimer
 }
