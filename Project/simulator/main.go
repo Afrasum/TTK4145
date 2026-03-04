@@ -112,17 +112,24 @@ func main() {
 
 // --- Terminal raw mode ---
 
+func sttyRaw() {
+	cmd := exec.Command("stty", "cbreak", "-echo")
+	cmd.Stdin = os.Stdin
+	cmd.Run()
+}
+
+func sttySane() {
+	cmd := exec.Command("stty", "sane")
+	cmd.Stdin = os.Stdin
+	cmd.Run()
+}
+
 func setRawTerminal() {
-	// Save and set raw mode using stty
-	exec.Command("stty", "-F", "/dev/stdin", "cbreak", "-echo").Run()
-	// Try macOS variant too
-	exec.Command("stty", "cbreak", "-echo").Run()
+	sttyRaw()
 }
 
 func restoreTerminal() {
-	exec.Command("stty", "-F", "/dev/stdin", "sane").Run()
-	exec.Command("stty", "sane").Run()
-	// Show cursor
+	sttySane()
 	fmt.Print("\033[?25h")
 }
 
