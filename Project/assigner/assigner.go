@@ -1,57 +1,114 @@
 package assigner
 
-import ( "os/exec"
- 		"fmt"
- 		"encoding/json" 
- 		"runtime")
+import (
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 
+	"sanntid/project/elevator"
+)
 
-type HRAElevState struct {
-	Behavior    string      `json:"behaviour"`
-	Floor       int         `json:"floor"`
-	Direction   string      `json:"direction"`
-	CabRequests []bool      `json:"cabRequests"`
+type hraElevState struct {
+	Behavior    string `json:"behaviour"`
+	Floor       int    `json:"floor"`
+	Direction   string `json:"direction"`
+	CabRequests []bool `json:"cabRequests"`
 }
 
-type HRAInput struct {
-	HallRequests    [][2]bool                   `json:"hallRequests"`
-	States          map[string]HRAElevState     `json:"states"`
+type hraInput struct {
+	HallRequests [][2]bool               `json:"hallRequests"`
+	States       map[string]hraElevState `json:"states"`
 }
 
-func AssignRequests(localID string,
-	allStates map[string]HRAElevState,
-	hallRequests [][2]bool) map[string][][2]bool {
+func behaviorToString(b elevator.Behavior) string {
+	switch b {
+	case elevator.ElevatorBehaviorMoving:
+		return "moving"
+	case elevator.ElevatorBehaviorDoorOpen:
+		return "doorOpen"
+	default:
+		return "idle"
+	}
+}
 
+func directionToString(d elevator.Direction) string {
+	switch d {
+	case elevator.DirUp:
+		return "up"
+	case elevator.DirDown:
+		return "down"
+	default:
+		return "stop"
+	}
+}
 
-    	hraExecutable := ""
-    	switch runtime.GOOS {
-   		case "linux":   hraExecutable = "hall_request_assigner"
-   		case "windows": hraExecutable = "hall_request_assigner.exe"
-    	default:        panic("OS not supported")
+func toHRAState(e elevator.Elevator) hraElevState {
+	cab := make([]bool, elevator.N_FLOORS)
+	for f := 0; f < elevator.N_FLOORS; f++ {
+		cab[f] = e.Requests[f][elevator.ButtonCab]
+	}
+	return hraElevState{
+		Behavior:    behaviorToString(e.Behavior),
+		Floor:       e.Floor,
+		Direction:   directionToString(e.Direction),
+		CabRequests: cab,
+	}
+}
+
+func binaryPath() string {
+	_, file, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(file)
+	switch runtime.GOOS {
+	case "windows":
+		return filepath.Join(dir, "hall_request_assigner", "hall_request_assigner.exe")
+	default:
+		return filepath.Join(dir, "hall_request_assigner", "hall_request_assigner")
+	}
+}
+
+// AssignHallRequests returns which hall requests localID should serve.
+func AssignHallRequests(
+	hallRequests [elevator.N_FLOORS][2]bool,
+	states map[string]elevator.Elevator,
+	localID string,
+) [elevator.N_FLOORS][2]bool {
+
+	hraStates := make(map[string]hraElevState)
+	for id, e := range states {
+		hraStates[id] = toHRAState(e)
 	}
 
-	input := HRAInput{
-		HallRequests: hallRequests,
-		States: allStates,
+	hrSlice := make([][2]bool, elevator.N_FLOORS)
+	for f := 0; f < elevator.N_FLOORS; f++ {
+		hrSlice[f] = hallRequests[f]
 	}
 
+	input := hraInput{HallRequests: hrSlice, States: hraStates}
 	jsonBytes, err := json.Marshal(input)
-	if err != nil{
-		fmt.Println("json.Marshal error: ", err)
-		return nil
+	if err != nil {
+		fmt.Println("assigner: json.Marshal error:", err)
+		return [elevator.N_FLOORS][2]bool{}
 	}
 
-	ret, err := exec.Command("../hall_request_assigner/+hraExecutable"+hraExecutable, "-i", string(jsonBytes)).CombinedOutput()
-    if err != nil {
-        fmt.Println("HRA exec error:", err)
-        return nil
-    }
+	out, err := exec.Command(binaryPath(), "-i", string(jsonBytes)).CombinedOutput()
+	if err != nil {
+		fmt.Println("assigner: exec error:", err)
+		return [elevator.N_FLOORS][2]bool{}
+	}
 
-	output := new(map[string][][2]bool)
-    if err = json.Unmarshal(ret, output); err != nil {
-        fmt.Println("HRA unmarshal error:", err)
-        return nil
-    }
+	var result map[string][][2]bool
+	if err = json.Unmarshal(out, &result); err != nil {
+		fmt.Println("assigner: unmarshal error:", err)
+		return [elevator.N_FLOORS][2]bool{}
+	}
 
-	return *output
+	var assigned [elevator.N_FLOORS][2]bool
+	for f, pair := range result[localID] {
+		if f < elevator.N_FLOORS {
+			assigned[f] = pair
+		}
+	}
+	return assigned
 }

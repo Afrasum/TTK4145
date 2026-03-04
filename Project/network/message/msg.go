@@ -3,10 +3,36 @@ package message
 import "sanntid/project/elevator"
 
 type ElevatorMessage struct {
-	ID           int
+	ID           string
 	Floor        int
 	Direction    elevator.Direction
 	Behavior     elevator.Behavior
-	CabRequests  [elevator.N_FLOORS][2]bool
+	CabRequests  [elevator.N_FLOORS]bool
 	HallRequests [elevator.N_FLOORS][2]bool
+}
+
+func FromElevator(id string, e elevator.Elevator, hallRequests [elevator.N_FLOORS][2]bool) ElevatorMessage {
+	var cab [elevator.N_FLOORS]bool
+	for f := range e.Requests {
+		cab[f] = e.Requests[f][elevator.ButtonCab]
+	}
+	return ElevatorMessage{
+		ID:           id,
+		Floor:        e.Floor,
+		Direction:    e.Direction,
+		Behavior:     e.Behavior,
+		CabRequests:  cab,
+		HallRequests: hallRequests,
+	}
+}
+
+func ToElevator(m ElevatorMessage) elevator.Elevator {
+	var e elevator.Elevator
+	e.Floor = m.Floor
+	e.Direction = m.Direction
+	e.Behavior = m.Behavior
+	for f := 0; f < elevator.N_FLOORS; f++ {
+		e.Requests[f][elevator.ButtonCab] = m.CabRequests[f]
+	}
+	return e
 }

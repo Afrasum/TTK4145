@@ -39,12 +39,4 @@ type Elevator struct {
 	Direction Direction
 	Behavior  Behavior
 	Requests  [N_FLOORS][N_BUTTONS]bool
-<<<<<<< Updated upstream
-=======
-
-
-	type Config struct {
-		doorOpenTime double // float64?
-	}	
->>>>>>> Stashed changes
 }

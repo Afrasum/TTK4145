@@ -1,3 +1,2 @@
-package project
-package project
+package main
 
