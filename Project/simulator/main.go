@@ -76,8 +76,8 @@ func main() {
 	// Initialize elevators
 	for i := 0; i < numElevators; i++ {
 		elevators[i] = &ElevatorSim{
-			position:  0,
-			currFloor: 0,
+			position:  0.5,
+			currFloor: -1,
 		}
 	}
 
@@ -141,6 +141,10 @@ func tcpServer(idx int) {
 		conn, err := ln.Accept()
 		if err != nil {
 			continue
+		}
+		// Disable Nagle for low-latency 4-byte messages
+		if tc, ok := conn.(*net.TCPConn); ok {
+			tc.SetNoDelay(true)
 		}
 		// Only allow one connection at a time per elevator
 		elevators[idx].mu.Lock()
