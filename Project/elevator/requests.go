@@ -31,7 +31,7 @@ func requestAtCurrentFloor(e Elevator) bool {
 	return false
 }
 
-func requestsChooseDirection(e Elevator) DirectionBehaviorPair {
+func RequestsChooseDirection(e Elevator) DirectionBehaviorPair {
 	switch e.Direction {
 	case DirUp:
 		if requestAbove(e) {
@@ -68,7 +68,7 @@ func requestsChooseDirection(e Elevator) DirectionBehaviorPair {
 	}
 }
 
-func requestsShouldStop(e Elevator) bool {
+func RequestsShouldStop(e Elevator) bool {
 	switch e.Direction {
 	case DirUp:
 		return e.Requests[e.Floor][ButtonHallUp] ||
@@ -93,7 +93,7 @@ func requestsShouldClearImmediately(e Elevator, btnFloor int, btnType ButtonType
 			e.Direction == DirStop)
 }
 
-func requestsClearAtCurrentFloor(e Elevator) Elevator {
+func RequestsClearAtCurrentFloor(e Elevator) Elevator {
 	e.Requests[e.Floor][ButtonCab] = false
 	switch e.Direction {
 	case DirUp:

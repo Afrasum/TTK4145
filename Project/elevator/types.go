@@ -39,9 +39,4 @@ type Elevator struct {
 	Direction Direction
 	Behavior  Behavior
 	Requests  [N_FLOORS][N_BUTTONS]bool
-
-
-	type ElevatorConfig struct {
-		doorOpenTime double
-	}	
 }

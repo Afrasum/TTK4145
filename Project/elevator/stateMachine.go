@@ -2,7 +2,7 @@ package elevator
 
 import "Driver-go/elevio"
 
-func setAllLights(es Elevator) {
+func SetAllLights(es Elevator) {
 	for floor := range N_FLOORS {
 		for button := range N_BUTTONS {
 			elevio.SetButtonLamp(elevio.ButtonType(button), floor, es.Requests[floor][button])
@@ -31,11 +31,11 @@ func FsmOnFloorArrival(e *Elevator, newFloor int) (startTimer bool) {
 	e.Floor = newFloor
 	elevio.SetFloorIndicator(e.Floor)
 
-	if e.Behavior == ElevatorBehaviorMoving && requestsShouldStop(*e) {
+	if e.Behavior == ElevatorBehaviorMoving && RequestsShouldStop(*e) {
 		elevio.SetMotorDirection(elevio.MD_Stop)
 		elevio.SetDoorOpenLamp(true)
-		*e = requestsClearAtCurrentFloor(*e)
-		setAllLights(*e)
+		*e = RequestsClearAtCurrentFloor(*e)
+		SetAllLights(*e)
 		e.Behavior = ElevatorBehaviorDoorOpen
 		return true
 	}
@@ -47,14 +47,14 @@ func FsmOnDoorTimeout(e *Elevator) (startTimer bool) {
 		return false
 	}
 
-	pair := requestsChooseDirection(*e)
+	pair := RequestsChooseDirection(*e)
 	e.Direction = pair.Direction
 	e.Behavior = pair.Behavior
 
 	switch e.Behavior {
 	case ElevatorBehaviorDoorOpen:
-		*e = requestsClearAtCurrentFloor(*e)
-		setAllLights(*e)
+		*e = RequestsClearAtCurrentFloor(*e)
+		SetAllLights(*e)
 		return true
 	case ElevatorBehaviorMoving, ElevatorBehaviorIdle:
 		elevio.SetDoorOpenLamp(false)
@@ -74,18 +74,26 @@ func FsmOnRequestButtonPress(e *Elevator, btnFloor int, btnType ButtonType) (sta
 		e.Requests[btnFloor][btnType] = true
 	case ElevatorBehaviorIdle:
 		e.Requests[btnFloor][btnType] = true
-		pair := requestsChooseDirection(*e)
+		pair := RequestsChooseDirection(*e)
 		e.Direction = pair.Direction
 		e.Behavior = pair.Behavior
 		switch pair.Behavior {
 		case ElevatorBehaviorDoorOpen:
 			elevio.SetDoorOpenLamp(true)
-			*e = requestsClearAtCurrentFloor(*e)
+			*e = RequestsClearAtCurrentFloor(*e)
 			startTimer = true
 		case ElevatorBehaviorMoving:
 			elevio.SetMotorDirection(dirToMotor(e.Direction))
 		}
 	}
-	setAllLights(*e)
+	SetAllLights(*e)
 	return startTimer
+}
+
+func FsmOnObstruction(e *Elevator, obstructed bool) bool {
+	if e.Behavior == ElevatorBehaviorDoorOpen {
+		elevio.SetDoorOpenLamp(true)
+		return true
+	}
+	return false
 }
