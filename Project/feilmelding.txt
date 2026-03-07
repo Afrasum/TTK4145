@@ -27,3 +27,9 @@ import path[0] = /usr/include/dmd/phobos
 import path[1] = /usr/include/dmd/druntime/import
 student@sanntidssalen ~/Project-resources/cost_fns/hall_request_assigner (master) [1]
 ❯ 
+
+
+
+dmd main.d config.d elevator_algorithm.d elevator_state.d optimal_hall_requests.d
+  d-json/jsonx.d -w -ofhall_request_assigner
+
