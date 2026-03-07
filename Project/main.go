@@ -257,7 +257,15 @@ func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][2]e
 
 func listenForPrimary(id string) {
 	addr, _ := net.ResolveUDPAddr("udp", ":30001")
-	conn, _ := net.ListenUDP("udp", addr)
+	var conn *net.UDPConn
+	for {
+		var err error
+		conn, err = net.ListenUDP("udp", addr)
+		if err == nil {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 	defer conn.Close()
 
 	buf := make([]byte, 128)
