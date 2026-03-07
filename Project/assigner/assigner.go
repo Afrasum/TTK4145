@@ -70,7 +70,7 @@ func binaryPath() string {
 
 // AssignHallRequests returns which hall requests localID should serve.
 func AssignHallRequests(
-	hallRequests [elevator.N_FLOORS][2]bool,
+	hallRequests [elevator.N_FLOORS][2]elevator.HallRequest,
 	states map[string]elevator.Elevator,
 	localID string,
 ) [elevator.N_FLOORS][2]bool {
@@ -82,7 +82,7 @@ func AssignHallRequests(
 
 	hrSlice := make([][2]bool, elevator.N_FLOORS)
 	for f := 0; f < elevator.N_FLOORS; f++ {
-		hrSlice[f] = hallRequests[f]
+		hrSlice[f] = [2]bool{hallRequests[f][0].Active, hallRequests[f][1].Active}
 	}
 
 	input := hraInput{HallRequests: hrSlice, States: hraStates}

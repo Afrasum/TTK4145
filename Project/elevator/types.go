@@ -34,9 +34,14 @@ type DirectionBehaviorPair struct {
 	Behavior  Behavior
 }
 
+type HallRequest struct {
+	Active  bool
+	Counter uint8 // counter between 0 and 255, highest number is latest version
+}
+
 type Elevator struct {
 	Floor     int
 	Direction Direction
 	Behavior  Behavior
-	Requests  [N_FLOORS][N_BUTTONS]bool
+	Requests  [N_FLOORS][N_BUTTONS]bool // matrix of all requests, indexed by floor and button type
 }

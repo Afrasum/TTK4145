@@ -8,10 +8,10 @@ type ElevatorMessage struct {
 	Direction    elevator.Direction
 	Behavior     elevator.Behavior
 	CabRequests  [elevator.N_FLOORS]bool
-	HallRequests [elevator.N_FLOORS][2]bool
+	HallRequests [elevator.N_FLOORS][2]elevator.HallRequest
 }
 
-func FromElevator(id string, e elevator.Elevator, hallRequests [elevator.N_FLOORS][2]bool) ElevatorMessage {
+func FromElevator(id string, e elevator.Elevator, hallRequests [elevator.N_FLOORS][2]elevator.HallRequest) ElevatorMessage {
 	var cab [elevator.N_FLOORS]bool
 	for f := range e.Requests {
 		cab[f] = e.Requests[f][elevator.ButtonCab]
