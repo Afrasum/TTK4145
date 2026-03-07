@@ -18,3 +18,12 @@
 
   Hvis ikke: sudo apt install dmd-compiler
 
+
+student@sanntidssalen ~/Project-resources/cost_fns/hall_request_assigner (master) [1]
+❯ dmd main.d config.d elevator_algorithm.d elevator_state.d optimal_hall_requests.d
+main.d(9): Error: unable to read module `jsonx`
+main.d(9):        Expected 'jsonx.d' or 'jsonx/package.d' in one of the following import paths:
+import path[0] = /usr/include/dmd/phobos
+import path[1] = /usr/include/dmd/druntime/import
+student@sanntidssalen ~/Project-resources/cost_fns/hall_request_assigner (master) [1]
+❯ 
