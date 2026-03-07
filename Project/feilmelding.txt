@@ -1,13 +1,20 @@
-./project --id 1
-[listenForPrimary] listening for primary heartbeat...
-[listenForPrimary] no heartbeat, becoming primary
-[main] became primary (id=1)
-[startBackup] spawning backup: /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/project --id=1 --port=localhost:15657
-[main] connecting to elevator at localhost:15657
-[main] elevator connected, starting FSM
-assigner: exec error: fork/exec /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner: exec format error
-assigner: exec error: fork/exec /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner: exec format error
-assigner: exec error: fork/exec /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner: exec format error
-Motor watchdog triggered
-^C⏎                                                                                                                      student@sanntidssalen ~/Desktop/AfrasAdneTuang/TTK4145/Project (master) [130]
-❯ 
+  # 1. Klon kilden (med submodul)
+  cd ~
+  git clone --recursive https://github.com/TTK4145/Project-resources.git
+  cd Project-resources/cost_fns/hall_request_assigner
+
+  # 2. Kompiler
+  dmd main.d config.d elevator_algorithm.d elevator_state.d optimal_hall_requests.d
+  d-json/jsonx.d -w -ofhall_request_assigner
+
+  # 3. Kopier til prosjektet
+  cp hall_request_assigner
+  ~/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/
+  chmod +x ~/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/ha
+  ll_request_assigner
+
+  Sjekk at dmd er installert først:
+  which dmd
+
+  Hvis ikke: sudo apt install dmd-compiler
+
