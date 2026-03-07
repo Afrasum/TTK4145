@@ -1,11 +1,14 @@
 package main
 
 import (
+	"Driver-go/elevio"
 	"flag"
 	"fmt"
+	"net"
+	"os"
+	"os/exec"
 	"time"
 
-	"Driver-go/elevio"
 	"sanntid/project/assigner"
 	"sanntid/project/config"
 	"sanntid/project/elevator"
@@ -20,11 +23,13 @@ func main() {
 	flag.StringVar(&id, "id", "", "Unique ID for the elevator")
 	flag.StringVar(&port, "port", "localhost:15657", "Simulator address")
 	flag.Parse()
-	
 
 	if id == "" {
 		panic("--id required")
 	}
+
+	listenForPrimary(id)
+	startBackup(id, port)
 
 	elevio.Init(port, elevator.N_FLOORS)
 
@@ -37,8 +42,8 @@ func main() {
 		elevator.FsmOnInitBetweenFloors(&e)
 	}
 
-	cab, err := persistence.loadCabCalls(id)
-	if err != nil {
+	cab, err := persistence.LoadCabCalls(id)
+	if err == nil {
 		for floor := range cab {
 			if cab[floor] {
 				e.Requests[floor][elevator.ButtonCab] = true
@@ -54,6 +59,7 @@ func main() {
 	peerUpdateCh := make(chan peers.PeerUpdate)
 	peerTxEnable := make(chan bool)
 
+	go sendHeartbeat(id)
 	go elevio.PollButtons(buttonCh)
 	go elevio.PollFloorSensor(floorCh)
 	go elevio.PollObstructionSwitch(obstrCh)
@@ -79,8 +85,8 @@ func main() {
 		case btn := <-buttonCh:
 			if elevator.ButtonType(btn.Button) == elevator.ButtonCab {
 				e.Requests[btn.Floor][elevator.ButtonCab] = true
-				if err:= persistence.saveCabCalls( id,e); err != nil{
-					fmt.println("warning,err")
+				if err := persistence.SaveCabCalls(e, id); err != nil {
+					fmt.Println("Warning:", err)
 				}
 				if elevator.FsmOnRequestButtonPress(&e, btn.Floor, elevator.ButtonCab) {
 					doorTimer.Reset(config.DoorOpenTime)
@@ -174,5 +180,39 @@ func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][2]b
 		if !e.Requests[floor][btn] {
 			hallRequests[floor][btn] = false
 		}
+	}
+}
+
+func listenForPrimary(id string) {
+	addr, _ := net.ResolveUDPAddr("udp", ":30001")
+	conn, _ := net.ListenUDP("udp", addr)
+	defer conn.Close()
+
+	buf := make([]byte, 128)
+	for {
+		conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		n, _, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			return
+		}
+		if string(buf[:n]) == id {
+			continue
+		}
+	}
+}
+
+func startBackup(id, port string) {
+	exe, _ := os.Executable()
+	cmd := exec.Command(exe, "--id="+id, "--port="+port)
+	cmd.Start()
+}
+
+func sendHeartbeat(id string) {
+	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:30001")
+	conn, _ := net.DialUDP("udp", nil, addr)
+	defer conn.Close()
+	for {
+		conn.Write([]byte(id))
+		time.Sleep(100 * time.Millisecond)
 	}
 }

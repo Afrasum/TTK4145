@@ -7,7 +7,7 @@ import (
 	"sanntid/project/elevator"
 )
 
-func loadCabCalls(id string) ([elevator.N_FLOORS]bool, error) {
+func LoadCabCalls(id string) ([elevator.N_FLOORS]bool, error) {
 
 	var cab [elevator.N_FLOORS]bool
 	data, err := os.ReadFile("cab_" + id + ".json")
@@ -19,7 +19,7 @@ func loadCabCalls(id string) ([elevator.N_FLOORS]bool, error) {
 	return cab, err
 }
 
-func cabOrderBackup(e elevator.Elevator, id string) error {
+func SaveCabCalls(e elevator.Elevator, id string) error {
 	var cab [elevator.N_FLOORS]bool
 	for floor := range cab {
 		cab[floor] = e.Requests[floor][elevator.ButtonCab]
@@ -35,7 +35,7 @@ func cabOrderBackup(e elevator.Elevator, id string) error {
 	}
 
 	//Confirmation read
-	confirmed, err := loadCabCalls(id)
+	confirmed, err := LoadCabCalls(id)
 	if err != nil || confirmed != cab {
 		return fmt.Errorf("cab save verification failed")
 	}
