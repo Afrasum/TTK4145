@@ -10,6 +10,13 @@ func setAllLights(es Elevator) {
 	}
 }
 
+func SetHallLamps(hallActive [N_FLOORS][2]bool) {
+	for floor := range N_FLOORS {
+		elevio.SetButtonLamp(elevio.ButtonType(ButtonHallUp), floor, hallActive[floor][0])
+		elevio.SetButtonLamp(elevio.ButtonType(ButtonHallDown), floor, hallActive[floor][1])
+	}
+}
+
 func dirToMotor(d Direction) elevio.MotorDirection {
 	switch d {
 	case DirUp:

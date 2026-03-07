@@ -109,7 +109,8 @@ func main() {
 				}
 			} else {
 				hallRequests[btn.Floor][btn.Button].Active = true
-				hallRequests[btn.Floor][btn.Button].Counter++ 
+				hallRequests[btn.Floor][btn.Button].Counter++
+				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 				peerStates[id] = e
 				applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
 			}
@@ -122,6 +123,10 @@ func main() {
 			if elevator.FsmOnFloorArrival(&e, floor) {
 				doorTimer.Reset(config.DoorOpenTime)
 				clearServedHall(&e, &hallRequests, floor)
+				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
+				if err := persistence.SaveCabCalls(e, id); err != nil {
+					fmt.Println("Warning:", err)
+				}
 			}
 
 		case <-doorTimer.C:
@@ -134,6 +139,13 @@ func main() {
 			}
 			if e.Behavior == elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
+			} else if e.Behavior == elevator.ElevatorBehaviorIdle {
+				if !motorWatchdog.Stop() {
+					select {
+					case <-motorWatchdog.C:
+					default:
+					}
+				}
 			}
 
 		case obs := <-obstrCh:
@@ -158,10 +170,16 @@ func main() {
 					hallRequests[floor][btn] = mergeHallRequests(hallRequests[floor][btn], msg.HallRequests[floor][btn])
 					if msg.HallRequests[floor][btn].Counter == hallCounterN {
 						hasReachedN[floor][btn][msg.ID] = true
-					}else {
-						delete (hasReachedN[floor][btn], msg.ID)
+					} else {
+						delete(hasReachedN[floor][btn], msg.ID)
 					}
-					if hallRequests[floor][btn ].Counter == hallCounterN{
+					// Track self so barrier can trigger when we also reach N
+					if hallRequests[floor][btn].Counter == hallCounterN {
+						hasReachedN[floor][btn][id] = true
+					} else {
+						delete(hasReachedN[floor][btn], id)
+					}
+					if hallRequests[floor][btn].Counter == hallCounterN {
 						hallAtN := true
 						for peerID := range peerStates {
 							if !hasReachedN[floor][btn][peerID] {
@@ -182,6 +200,7 @@ func main() {
 
 			peerStates[msg.ID] = message.ToElevator(msg)
 			peerStates[id] = e
+			elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 			applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
 			if e.Behavior == elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
@@ -191,9 +210,17 @@ func main() {
 			for _, lost := range pu.Lost {
 				delete(peerStates, lost)
 				for floor := range hasReachedN {
-					for btn := range hasRechedN[floor]{
-						delete (hasReachedN[floor][btn], lost)
+					for btn := range hasReachedN[floor] {
+						delete(hasReachedN[floor][btn], lost)
 					}
+				}
+			}
+			if len(peerStates) == 0 {
+				for floor := range hallRequests {
+					for btn := range hallRequests[floor] {
+						hallRequests[floor][btn].Unknown = true
+					}
+				}
 			}
 			peerStates[id] = e
 			applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
@@ -270,8 +297,11 @@ func cyclicIsAfter(incoming,local uint8) bool {
 	return incoming > local
 }
 
-func mergeHallRequests(ours,theirs elevator.HallRequest) elevator.HallRequest {
-	if cyclicIsAfter(theirs.Counter,ours.Counter) {
+func mergeHallRequests(ours, theirs elevator.HallRequest) elevator.HallRequest {
+	if ours.Unknown {
+		return elevator.HallRequest{Active: theirs.Active, Counter: theirs.Counter, Unknown: false}
+	}
+	if cyclicIsAfter(theirs.Counter, ours.Counter) {
 		return theirs
 	}
 	return ours
