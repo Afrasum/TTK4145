@@ -33,9 +33,12 @@ func main() {
 	}
 
 	listenForPrimary(id)
+	fmt.Printf("[main] became primary (id=%s)\n", id)
 	startBackup(id, port)
 
+	fmt.Printf("[main] connecting to elevator at %s\n", port)
 	elevio.Init(port, elevator.N_FLOORS)
+	fmt.Println("[main] elevator connected, starting FSM")
 
 
 	
@@ -264,25 +267,30 @@ func listenForPrimary(id string) {
 		if err == nil {
 			break
 		}
+		fmt.Println("[listenForPrimary] port busy, retrying...")
 		time.Sleep(200 * time.Millisecond)
 	}
 	defer conn.Close()
+	fmt.Println("[listenForPrimary] listening for primary heartbeat...")
 
 	buf := make([]byte, 128)
 	for {
 		conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 		n, _, err := conn.ReadFromUDP(buf)
 		if err != nil {
+			fmt.Println("[listenForPrimary] no heartbeat, becoming primary")
 			return
 		}
 		if string(buf[:n]) == id {
 			continue
 		}
+		fmt.Printf("[listenForPrimary] heartbeat from %q, waiting...\n", string(buf[:n]))
 	}
 }
 
 func startBackup(id, port string) {
 	exe, _ := os.Executable()
+	fmt.Printf("[startBackup] spawning backup: %s --id=%s --port=%s\n", exe, id, port)
 	cmd := exec.Command(exe, "--id="+id, "--port="+port)
 	cmd.Start()
 }
