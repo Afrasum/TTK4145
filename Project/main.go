@@ -291,8 +291,15 @@ func listenForPrimary(id string) {
 func startBackup(id, port string) {
 	exe, _ := os.Executable()
 	fmt.Printf("[startBackup] spawning backup: %s --id=%s --port=%s\n", exe, id, port)
-	cmd := exec.Command(exe, "--id="+id, "--port="+port)
-	cmd.Start()
+	args := exe + " --id=" + id + " --port=" + port
+	cmd := exec.Command("gnome-terminal", "--", "bash", "-c", args+"; read")
+	if err := cmd.Start(); err != nil {
+		// fallback: xterm
+		cmd = exec.Command("xterm", "-e", "bash -c '"+args+"; read'")
+		if err := cmd.Start(); err != nil {
+			fmt.Println("[startBackup] could not open terminal window:", err)
+		}
+	}
 }
 
 func sendHeartbeat(id string) {
