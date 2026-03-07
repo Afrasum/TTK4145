@@ -1,11 +1,13 @@
+./project --id 1
 [listenForPrimary] listening for primary heartbeat...
 [listenForPrimary] no heartbeat, becoming primary
 [main] became primary (id=1)
 [startBackup] spawning backup: /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/project --id=1 --port=localhost:15657
 [main] connecting to elevator at localhost:15657
 [main] elevator connected, starting FSM
-assigner: exec error: fork/exec /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner: permission denied
-assigner: exec error: fork/exec /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner: permission denied
-assigner: exec error: fork/exec /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner: permission denied
+assigner: exec error: fork/exec /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner: exec format error
+assigner: exec error: fork/exec /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner: exec format error
+assigner: exec error: fork/exec /home/student/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner: exec format error
 Motor watchdog triggered
-^C⏎        
+^C⏎                                                                                                                      student@sanntidssalen ~/Desktop/AfrasAdneTuang/TTK4145/Project (master) [130]
+❯ 
