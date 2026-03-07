@@ -12,6 +12,7 @@ import (
 	"sanntid/project/network/bcast"
 	"sanntid/project/network/message"
 	"sanntid/project/network/peers"
+	"sanntid/project/persistence"
 )
 
 func main() {
@@ -19,6 +20,7 @@ func main() {
 	flag.StringVar(&id, "id", "", "Unique ID for the elevator")
 	flag.StringVar(&port, "port", "localhost:15657", "Simulator address")
 	flag.Parse()
+	
 
 	if id == "" {
 		panic("--id required")
@@ -35,11 +37,20 @@ func main() {
 		elevator.FsmOnInitBetweenFloors(&e)
 	}
 
-	buttonCh     := make(chan elevio.ButtonEvent)
-	floorCh      := make(chan int)
-	obstrCh      := make(chan bool)
-	txCh         := make(chan message.ElevatorMessage)
-	rxCh         := make(chan message.ElevatorMessage)
+	cab, err := persistence.loadCabCalls(id)
+	if err != nil {
+		for floor := range cab {
+			if cab[floor] {
+				e.Requests[floor][elevator.ButtonCab] = true
+			}
+		}
+	}
+
+	buttonCh := make(chan elevio.ButtonEvent)
+	floorCh := make(chan int)
+	obstrCh := make(chan bool)
+	txCh := make(chan message.ElevatorMessage)
+	rxCh := make(chan message.ElevatorMessage)
 	peerUpdateCh := make(chan peers.PeerUpdate)
 	peerTxEnable := make(chan bool)
 
@@ -54,17 +65,23 @@ func main() {
 	peerTxEnable <- true
 
 	var hallRequests [elevator.N_FLOORS][2]bool
-	peerStates  := make(map[string]elevator.Elevator)
-	obstructed  := false
+	peerStates := make(map[string]elevator.Elevator)
+	obstructed := false
 
-	doorTimer       := time.NewTimer(0); <-doorTimer.C
-	motorWatchdog   := time.NewTimer(0); <-motorWatchdog.C
+	doorTimer := time.NewTimer(0)
+	<-doorTimer.C
+	motorWatchdog := time.NewTimer(0)
+	<-motorWatchdog.C
 	broadcastTicker := time.NewTicker(config.BroadcastInterval)
 
 	for {
 		select {
 		case btn := <-buttonCh:
 			if elevator.ButtonType(btn.Button) == elevator.ButtonCab {
+				e.Requests[btn.Floor][elevator.ButtonCab] = true
+				if err:= persistence.saveCabCalls( id,e); err != nil{
+					fmt.println("warning,err")
+				}
 				if elevator.FsmOnRequestButtonPress(&e, btn.Floor, elevator.ButtonCab) {
 					doorTimer.Reset(config.DoorOpenTime)
 				}
