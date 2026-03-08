@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"sanntid/project/assigner"
@@ -27,7 +28,7 @@ const hallCounterN = 255 // max value of counter
 func main() {
 	var id, port string
 	flag.StringVar(&id, "id", "", "Unique ID for the elevator")
-	flag.StringVar(&port, "port", "15657", "Simulator port")
+	flag.StringVar(&port, "port", "15657", "Elevator server: port number OR host:port")
 	flag.Parse()
 
 	if id == "" {
@@ -39,7 +40,10 @@ func main() {
 	go sendHeartbeat(id)
 	startBackup(id, port)
 
-	port = "localhost:" + port
+	// Accept plain port number or full host:port
+	if !strings.Contains(port, ":") {
+		port = "localhost:" + port
+	}
 	fmt.Printf("[main] connecting to elevator at %s\n", port)
 	elevio.Init(port, elevator.N_FLOORS)
 	fmt.Println("[main] elevator connected, starting FSM")
