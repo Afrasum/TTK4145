@@ -1,5 +1,8 @@
 package main
 
+// TODO: door lamp not working poroperly
+// TODO: implement stop button
+
 import (
 	"Driver-go/elevio"
 	"flag"
@@ -144,6 +147,12 @@ func main() {
 			}
 			if elevator.FsmOnFloorArrival(&e, floor) {
 				doorTimer.Reset(config.DoorOpenTime)
+				if !motorWatchdog.Stop() {
+					select {
+					case <-motorWatchdog.C:
+					default:
+					}
+				}
 				clearServedHall(&e, &hallRequests, floor)
 				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 				if err := persistence.SaveCabCalls(e, id); err != nil {
@@ -181,6 +190,7 @@ func main() {
 		case <-motorWatchdog.C: // TODO: this says we crached, but do we handle it? should we kill process and let backup take over?
 			fmt.Println("Motor watchdog triggered")
 			elevio.SetMotorDirection(elevio.MD_Stop)
+			elevio.SetDoorOpenLamp(false)
 			e.Behavior = elevator.ElevatorBehaviorIdle
 			e.Direction = elevator.DirStop
 
