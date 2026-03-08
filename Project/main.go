@@ -21,9 +21,7 @@ import (
 	"sanntid/project/persistence"
 )
 
-const hallCounterN = 255 // max value of counter 
-
-
+const hallCounterN = 255 // max value of counter TODO: unneccesary comment, var name should be explanatory enough
 
 func main() {
 	var id, port string
@@ -31,13 +29,13 @@ func main() {
 	flag.StringVar(&port, "port", "15657", "Elevator server: port number OR host:port")
 	flag.Parse()
 
+	// TODO add acceptance test
 	if id == "" {
 		panic("--id required")
 	}
 
 	listenForPrimary(id)
 	fmt.Printf("[main] became primary (id=%s)\n", id)
-	go sendHeartbeat(id)
 	startBackup(id, port)
 
 	// Accept plain port number or full host:port
@@ -48,9 +46,6 @@ func main() {
 	elevio.Init(port, elevator.N_FLOORS)
 	fmt.Println("[main] elevator connected, starting FSM")
 
-
-	
-
 	e := elevator.Elevator{
 		Direction: elevator.DirStop,
 		Behavior:  elevator.ElevatorBehaviorIdle,
@@ -60,7 +55,7 @@ func main() {
 		elevator.FsmOnInitBetweenFloors(&e)
 	}
 
-	cab, err := persistence.LoadCabCalls(id)
+	cab, err := persistence.LoadCabCalls(id) // TODO:move loading and initiating cab calls from disk to separate function
 	if err == nil {
 		for floor := range cab {
 			if cab[floor] {
@@ -77,8 +72,6 @@ func main() {
 		}
 	}
 
-
-
 	buttonCh := make(chan elevio.ButtonEvent)
 	floorCh := make(chan int)
 	obstrCh := make(chan bool)
@@ -87,6 +80,7 @@ func main() {
 	peerUpdateCh := make(chan peers.PeerUpdate)
 	peerTxEnable := make(chan bool)
 
+	go sendHeartbeat(id)
 	go elevio.PollButtons(buttonCh)
 	go elevio.PollFloorSensor(floorCh)
 	go elevio.PollObstructionSwitch(obstrCh)
@@ -162,6 +156,8 @@ func main() {
 			}
 			if elevator.FsmOnDoorTimeout(&e) {
 				doorTimer.Reset(config.DoorOpenTime)
+				clearServedHall(&e, &hallRequests, e.Floor)
+				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 			}
 			if e.Behavior == elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
@@ -218,15 +214,18 @@ func main() {
 							hasReachedN[floor][btn] = make(map[string]bool)
 						}
 					}
-					
-				}
 
+				}
 			}
 
 			peerStates[msg.ID] = message.ToElevator(msg)
 			peerStates[id] = e
 			elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 			applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
+			if e.Behavior == elevator.ElevatorBehaviorDoorOpen {
+				clearServedHall(&e, &hallRequests, e.Floor)
+				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
+			}
 			if e.Behavior == elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
 			}
@@ -249,6 +248,10 @@ func main() {
 			}
 			peerStates[id] = e
 			applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
+			if e.Behavior == elevator.ElevatorBehaviorDoorOpen {
+				clearServedHall(&e, &hallRequests, e.Floor)
+				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
+			}
 			if e.Behavior == elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
 			}
@@ -343,11 +346,14 @@ func sendHeartbeat(id string) {
 	}
 }
 
-
-func cyclicIsAfter(incoming,local uint8) bool {
-	//is b after a in cyclic order 
-	if local == hallCounterN && incoming == 0 {return true} // accept reset
-	if local == 0 && incoming == hallCounterN {return false} // others must reset
+func cyclicIsAfter(incoming, local uint8) bool {
+	// is b after a in cyclic order
+	if local == hallCounterN && incoming == 0 {
+		return true
+	} // accept reset
+	if local == 0 && incoming == hallCounterN {
+		return false
+	} // others must reset
 	return incoming > local
 }
 
@@ -361,7 +367,6 @@ func mergeHallRequests(ours, theirs elevator.HallRequest) elevator.HallRequest {
 	return ours
 }
 
-
 func confirmedHallRequests(hallRequests [elevator.N_FLOORS][2]elevator.HallRequest) [elevator.N_FLOORS][2]bool {
 	var out [elevator.N_FLOORS][2]bool
 	for floor := range hallRequests {
@@ -369,7 +374,5 @@ func confirmedHallRequests(hallRequests [elevator.N_FLOORS][2]elevator.HallReque
 			out[floor][btn] = hallRequests[floor][btn].Active
 		}
 	}
-	return out 
+	return out
 }
-
-
