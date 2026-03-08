@@ -1,6 +1,5 @@
 package main
 
-// TODO: door lamp not working poroperly
 // TODO: implement stop button
 
 import (
@@ -32,7 +31,6 @@ func main() {
 	flag.StringVar(&port, "port", "15657", "Elevator server: port number OR host:port")
 	flag.Parse()
 
-	// TODO add acceptance test
 	if id == "" {
 		panic("--id required")
 	}
@@ -58,7 +56,7 @@ func main() {
 		elevator.FsmOnInitBetweenFloors(&e)
 	}
 
-	cab, err := persistence.LoadCabCalls(id) // TODO:move loading and initiating cab calls from disk to separate function
+	cab, err := persistence.LoadCabCalls(id)
 	if err == nil {
 		for floor := range cab {
 			if cab[floor] {
@@ -67,7 +65,6 @@ func main() {
 		}
 	}
 
-	// TODO: can also be func
 	var hallRequests [elevator.N_FLOORS][2]elevator.HallRequest
 	hasReachedN := [elevator.N_FLOORS][2]map[string]bool{}
 	for floor := range hasReachedN {
@@ -104,8 +101,29 @@ func main() {
 	<-motorWatchdog.C
 	broadcastTicker := time.NewTicker(config.BroadcastInterval)
 
+	// Async assigner: runs hall_request_assigner binary in a goroutine
+	// so the main loop is never blocked by subprocess execution.
+	assignerResultCh := make(chan [elevator.N_FLOORS][2]bool, 1)
+	assignerInFlight := false
+	needsReassign := false
+	triggerAssigner := func() {
+		if assignerInFlight {
+			needsReassign = true
+			return
+		}
+		assignerInFlight = true
+		needsReassign = false
+		hrCopy := hallRequests // array — copied by value
+		psCopy := make(map[string]elevator.Elevator, len(peerStates))
+		for k, v := range peerStates {
+			psCopy[k] = v
+		}
+		go func() {
+			assignerResultCh <- assigner.AssignHallRequests(hrCopy, psCopy, id)
+		}()
+	}
+
 	// Trigger FSM to serve cab calls loaded from disk
-	// TODO: move to separate function
 	if err == nil {
 		for floor, active := range cab {
 			if active {
@@ -122,8 +140,8 @@ func main() {
 	for {
 		select {
 		case btn := <-buttonCh:
-			prevBehavior := e.Behavior
 			if elevator.ButtonType(btn.Button) == elevator.ButtonCab {
+				prevBehavior := e.Behavior
 				e.Requests[btn.Floor][elevator.ButtonCab] = true
 				if err := persistence.SaveCabCalls(e, id); err != nil {
 					fmt.Println("Warning:", err)
@@ -131,16 +149,16 @@ func main() {
 				if elevator.FsmOnRequestButtonPress(&e, btn.Floor, elevator.ButtonCab) {
 					doorTimer.Reset(config.DoorOpenTime)
 				}
+				if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
+					motorWatchdog.Reset(config.MotorWatchdogTime)
+				}
 			} else {
 				hallRequests[btn.Floor][btn.Button].Active = true
 				hallRequests[btn.Floor][btn.Button].Counter++
 				txCh <- message.FromElevator(id, e, hallRequests)
 				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 				peerStates[id] = e
-				applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
-			}
-			if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
-				motorWatchdog.Reset(config.MotorWatchdogTime)
+				triggerAssigner()
 			}
 
 		case floor := <-floorCh:
@@ -172,9 +190,9 @@ func main() {
 				clearServedHall(&e, &hallRequests, e.Floor)
 				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 			}
-			if e.Behavior == elevator.ElevatorBehaviorMoving { // TODO: should use tagged switch on e.Behavior
+			if e.Behavior == elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
-			} else if e.Behavior == elevator.ElevatorBehaviorIdle { // TODO: and maybe move all of this to separate function
+			} else if e.Behavior == elevator.ElevatorBehaviorIdle {
 				if !motorWatchdog.Stop() {
 					select {
 					case <-motorWatchdog.C:
@@ -183,14 +201,14 @@ func main() {
 				}
 			}
 
-		case obs := <-obstrCh: // TODO: is this triggered only once? or whathappens after doortimer reaches limit again after reaset, and we still have obstruction without new event triggering, can that happen?
+		case obs := <-obstrCh:
 			obstructed = obs
 			if obstructed && e.Behavior == elevator.ElevatorBehaviorDoorOpen {
 				doorTimer.Reset(config.DoorOpenTime)
 			}
 
-		case <-motorWatchdog.C: // TODO: this says we crached, but do we handle it? should we kill process and let backup take over?
-			fmt.Println("Motor watchdog triggered")
+		case <-motorWatchdog.C:
+			fmt.Println("[watchdog] motor stuck — setting idle, will reassign")
 			elevio.SetMotorDirection(elevio.MD_Stop)
 			elevio.SetDoorOpenLamp(false)
 			e.Behavior = elevator.ElevatorBehaviorIdle
@@ -200,18 +218,14 @@ func main() {
 			if msg.ID == id {
 				continue
 			}
-			prevBehavior := e.Behavior
-			// TODO: should def move this to separate function
-			for floor := 0; floor < elevator.N_FLOORS; floor++ { // TODO: use range over int
-				for btn := 0; btn < 2; btn++ { // TODO: use range voer int
+			for floor := 0; floor < elevator.N_FLOORS; floor++ {
+				for btn := 0; btn < 2; btn++ {
 					hallRequests[floor][btn] = mergeHallRequests(hallRequests[floor][btn], msg.HallRequests[floor][btn])
 					if msg.HallRequests[floor][btn].Counter == hallCounterN {
 						hasReachedN[floor][btn][msg.ID] = true
 					} else {
 						delete(hasReachedN[floor][btn], msg.ID)
 					}
-					// Track self so barrier can trigger when we also reach N
-					// TODO: clean up, this also oculd be moved to separate functio? Also, seems like id we reached n max, we jusst cononue and might exeed max? and do we have a merge tactic if same version? then we do OR cirrect?
 					if hallRequests[floor][btn].Counter == hallCounterN {
 						hasReachedN[floor][btn][id] = true
 					} else {
@@ -225,30 +239,19 @@ func main() {
 								break
 							}
 						}
-
 						if hallAtN {
 							hallRequests[floor][btn].Counter = 0
 							hasReachedN[floor][btn] = make(map[string]bool)
 						}
 					}
-
 				}
 			}
-
 			peerStates[msg.ID] = message.ToElevator(msg)
 			peerStates[id] = e
 			elevator.SetHallLamps(confirmedHallRequests(hallRequests))
-			applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
-			if e.Behavior == elevator.ElevatorBehaviorDoorOpen {
-				clearServedHall(&e, &hallRequests, e.Floor)
-				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
-			}
-			if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
-				motorWatchdog.Reset(config.MotorWatchdogTime)
-			}
+			triggerAssigner()
 
 		case pu := <-peerUpdateCh:
-			prevBehavior := e.Behavior
 			for _, lost := range pu.Lost {
 				delete(peerStates, lost)
 				for floor := range hasReachedN {
@@ -265,13 +268,21 @@ func main() {
 				}
 			}
 			peerStates[id] = e
-			applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
+			triggerAssigner()
+
+		case result := <-assignerResultCh:
+			assignerInFlight = false
+			prevBehavior := e.Behavior
+			applyAssigned(&e, result, doorTimer)
 			if e.Behavior == elevator.ElevatorBehaviorDoorOpen {
 				clearServedHall(&e, &hallRequests, e.Floor)
 				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 			}
 			if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
+			}
+			if needsReassign {
+				triggerAssigner()
 			}
 
 		case <-broadcastTicker.C:
@@ -296,7 +307,7 @@ func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][2]e
 	for btn := 0; btn < 2; btn++ {
 		if !e.Requests[floor][btn] {
 			hallRequests[floor][btn].Active = false
-			hallRequests[floor][btn].Counter++ // TODO: should we check if reset needed?
+			hallRequests[floor][btn].Counter++
 		}
 	}
 }
@@ -365,13 +376,12 @@ func sendHeartbeat(id string) {
 }
 
 func cyclicIsAfter(incoming, local uint16) bool {
-	// is b after a in cyclic order
 	if local == hallCounterN && incoming == 0 {
 		return true
-	} // accept reset
+	}
 	if local == 0 && incoming == hallCounterN {
 		return false
-	} // others must reset
+	}
 	return incoming > local
 }
 
