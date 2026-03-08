@@ -36,7 +36,7 @@ type DirectionBehaviorPair struct {
 
 type HallRequest struct {
 	Active  bool
-	Counter uint8 // counter between 0 and 255, highest number is latest version
+	Counter uint16 // counter between 0 and 65535, highest number is latest version
 	Unknown bool  // accept any incoming value regardless of counter
 }
 

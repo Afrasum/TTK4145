@@ -24,7 +24,7 @@ import (
 	"sanntid/project/persistence"
 )
 
-const hallCounterN = 255 // max value of counter TODO: unneccesary comment, var name should be explanatory enough
+const hallCounterN = 65535 // max value of uint16 counter
 
 func main() {
 	var id, port string
@@ -122,6 +122,7 @@ func main() {
 	for {
 		select {
 		case btn := <-buttonCh:
+			prevBehavior := e.Behavior
 			if elevator.ButtonType(btn.Button) == elevator.ButtonCab {
 				e.Requests[btn.Floor][elevator.ButtonCab] = true
 				if err := persistence.SaveCabCalls(e, id); err != nil {
@@ -132,13 +133,14 @@ func main() {
 				}
 			} else {
 				hallRequests[btn.Floor][btn.Button].Active = true
-				hallRequests[btn.Floor][btn.Button].Counter++              // TODO: should we check if reset needed?
-				elevator.SetHallLamps(confirmedHallRequests(hallRequests)) // TODO: send request to peers before setting lamps
+				hallRequests[btn.Floor][btn.Button].Counter++
+				txCh <- message.FromElevator(id, e, hallRequests)
+				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 				peerStates[id] = e
 				applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
 			}
-			if e.Behavior == elevator.ElevatorBehaviorMoving { // TODO: im guessing this is repeated a lot, maybe func is nice
-				motorWatchdog.Reset(config.MotorWatchdogTime) // TODO: fint out what this does. but i think claude has control
+			if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
+				motorWatchdog.Reset(config.MotorWatchdogTime)
 			}
 
 		case floor := <-floorCh:
@@ -198,6 +200,7 @@ func main() {
 			if msg.ID == id {
 				continue
 			}
+			prevBehavior := e.Behavior
 			// TODO: should def move this to separate function
 			for floor := 0; floor < elevator.N_FLOORS; floor++ { // TODO: use range over int
 				for btn := 0; btn < 2; btn++ { // TODO: use range voer int
@@ -240,11 +243,12 @@ func main() {
 				clearServedHall(&e, &hallRequests, e.Floor)
 				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 			}
-			if e.Behavior == elevator.ElevatorBehaviorMoving {
+			if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
 			}
 
 		case pu := <-peerUpdateCh:
+			prevBehavior := e.Behavior
 			for _, lost := range pu.Lost {
 				delete(peerStates, lost)
 				for floor := range hasReachedN {
@@ -266,7 +270,7 @@ func main() {
 				clearServedHall(&e, &hallRequests, e.Floor)
 				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 			}
-			if e.Behavior == elevator.ElevatorBehaviorMoving {
+			if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
 			}
 
@@ -360,7 +364,7 @@ func sendHeartbeat(id string) {
 	}
 }
 
-func cyclicIsAfter(incoming, local uint8) bool {
+func cyclicIsAfter(incoming, local uint16) bool {
 	// is b after a in cyclic order
 	if local == hallCounterN && incoming == 0 {
 		return true
@@ -374,6 +378,9 @@ func cyclicIsAfter(incoming, local uint8) bool {
 func mergeHallRequests(ours, theirs elevator.HallRequest) elevator.HallRequest {
 	if ours.Unknown {
 		return elevator.HallRequest{Active: theirs.Active, Counter: theirs.Counter, Unknown: false}
+	}
+	if ours.Counter == hallCounterN && theirs.Counter == hallCounterN {
+		return elevator.HallRequest{Active: ours.Active || theirs.Active, Counter: hallCounterN}
 	}
 	if cyclicIsAfter(theirs.Counter, ours.Counter) {
 		return theirs
