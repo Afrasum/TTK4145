@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
+	"strconv"
 	"time"
 
 	"sanntid/project/assigner"
@@ -25,7 +27,7 @@ const hallCounterN = 255 // max value of counter
 func main() {
 	var id, port string
 	flag.StringVar(&id, "id", "", "Unique ID for the elevator")
-	flag.StringVar(&port, "port", "localhost:15657", "Simulator address")
+	flag.StringVar(&port, "port", "15657", "Simulator port")
 	flag.Parse()
 
 	if id == "" {
@@ -34,8 +36,10 @@ func main() {
 
 	listenForPrimary(id)
 	fmt.Printf("[main] became primary (id=%s)\n", id)
+	go sendHeartbeat(id)
 	startBackup(id, port)
 
+	port = "localhost:" + port
 	fmt.Printf("[main] connecting to elevator at %s\n", port)
 	elevio.Init(port, elevator.N_FLOORS)
 	fmt.Println("[main] elevator connected, starting FSM")
@@ -79,7 +83,6 @@ func main() {
 	peerUpdateCh := make(chan peers.PeerUpdate)
 	peerTxEnable := make(chan bool)
 
-	go sendHeartbeat(id)
 	go elevio.PollButtons(buttonCh)
 	go elevio.PollFloorSensor(floorCh)
 	go elevio.PollObstructionSwitch(obstrCh)
@@ -258,8 +261,16 @@ func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][2]e
 	}
 }
 
+func heartbeatPort(id string) string {
+	n, err := strconv.Atoi(id)
+	if err != nil {
+		panic(fmt.Sprintf("elevator id must be a number, got %q", id))
+	}
+	return fmt.Sprintf(":%d", 30000+n)
+}
+
 func listenForPrimary(id string) {
-	addr, _ := net.ResolveUDPAddr("udp", ":30001")
+	addr, _ := net.ResolveUDPAddr("udp", heartbeatPort(id))
 	var conn *net.UDPConn
 	for {
 		var err error
@@ -275,7 +286,7 @@ func listenForPrimary(id string) {
 
 	buf := make([]byte, 128)
 	for {
-		conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, _, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			fmt.Println("[listenForPrimary] no heartbeat, becoming primary")
@@ -291,19 +302,20 @@ func listenForPrimary(id string) {
 func startBackup(id, port string) {
 	exe, _ := os.Executable()
 	fmt.Printf("[startBackup] spawning backup: %s --id=%s --port=%s\n", exe, id, port)
-	args := exe + " --id=" + id + " --port=" + port
-	cmd := exec.Command("gnome-terminal", "--", "bash", "-c", args+"; read")
+	args := `'` + exe + `' --id=` + id + ` --port=` + port
+	var cmd *exec.Cmd
+	if runtime.GOOS == "darwin" {
+		cmd = exec.Command("osascript", "-e", `tell app "Terminal" to do script "`+args+`"`)
+	} else {
+		cmd = exec.Command("gnome-terminal", "--", "bash", "-c", args+"; read")
+	}
 	if err := cmd.Start(); err != nil {
-		// fallback: xterm
-		cmd = exec.Command("xterm", "-e", "bash -c '"+args+"; read'")
-		if err := cmd.Start(); err != nil {
-			fmt.Println("[startBackup] could not open terminal window:", err)
-		}
+		fmt.Println("[startBackup] could not open terminal window:", err)
 	}
 }
 
 func sendHeartbeat(id string) {
-	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:30001")
+	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1"+heartbeatPort(id))
 	conn, _ := net.DialUDP("udp", nil, addr)
 	defer conn.Close()
 	for {

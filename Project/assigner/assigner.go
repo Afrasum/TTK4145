@@ -3,6 +3,7 @@ package assigner
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -49,8 +50,18 @@ func toHRAState(e elevator.Elevator) hraElevState {
 	for f := 0; f < elevator.N_FLOORS; f++ {
 		cab[f] = e.Requests[f][elevator.ButtonCab]
 	}
+	behavior := behaviorToString(e.Behavior)
+	// Assigner rejects moving off an end floor — happens during init between floors
+	// before the first floor sensor event updates e.Floor
+	if e.Behavior == elevator.ElevatorBehaviorMoving {
+		if e.Direction == elevator.DirDown && e.Floor <= 0 {
+			behavior = "idle"
+		} else if e.Direction == elevator.DirUp && e.Floor >= elevator.N_FLOORS-1 {
+			behavior = "idle"
+		}
+	}
 	return hraElevState{
-		Behavior:    behaviorToString(e.Behavior),
+		Behavior:    behavior,
 		Floor:       e.Floor,
 		Direction:   directionToString(e.Direction),
 		CabRequests: cab,
@@ -58,13 +69,16 @@ func toHRAState(e elevator.Elevator) hraElevState {
 }
 
 func binaryPath() string {
-	_, file, _, _ := runtime.Caller(0)
-	dir := filepath.Dir(file)
+	exe, err := os.Executable()
+	if err != nil {
+		panic("assigner: could not find executable path: " + err.Error())
+	}
+	dir := filepath.Dir(exe)
 	switch runtime.GOOS {
 	case "windows":
-		return filepath.Join(dir, "hall_request_assigner", "hall_request_assigner.exe")
+		return filepath.Join(dir, "assigner", "hall_request_assigner", "hall_request_assigner.exe")
 	default:
-		return filepath.Join(dir, "hall_request_assigner", "hall_request_assigner")
+		return filepath.Join(dir, "assigner", "hall_request_assigner", "hall_request_assigner")
 	}
 }
 
@@ -94,7 +108,7 @@ func AssignHallRequests(
 
 	out, err := exec.Command(binaryPath(), "-i", string(jsonBytes)).CombinedOutput()
 	if err != nil {
-		fmt.Println("assigner: exec error:", err)
+		fmt.Printf("assigner: exec error: %v\ninput: %s\noutput: %s\n", err, jsonBytes, out)
 		return [elevator.N_FLOORS][2]bool{}
 	}
 
