@@ -106,6 +106,20 @@ func main() {
 	<-motorWatchdog.C
 	broadcastTicker := time.NewTicker(config.BroadcastInterval)
 
+	// Trigger FSM to serve cab calls loaded from disk
+	if err == nil {
+		for floor, active := range cab {
+			if active {
+				if elevator.FsmOnRequestButtonPress(&e, floor, elevator.ButtonCab) {
+					doorTimer.Reset(config.DoorOpenTime)
+				}
+			}
+		}
+		if e.Behavior == elevator.ElevatorBehaviorMoving {
+			motorWatchdog.Reset(config.MotorWatchdogTime)
+		}
+	}
+
 	for {
 		select {
 		case btn := <-buttonCh:
