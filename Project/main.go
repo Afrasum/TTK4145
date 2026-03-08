@@ -129,7 +129,9 @@ func main() {
 			}
 
 		case floor := <-floorCh:
-			motorWatchdog.Reset(config.MotorWatchdogTime)
+			if e.Behavior == elevator.ElevatorBehaviorMoving {
+				motorWatchdog.Reset(config.MotorWatchdogTime)
+			}
 			if elevator.FsmOnFloorArrival(&e, floor) {
 				doorTimer.Reset(config.DoorOpenTime)
 				clearServedHall(&e, &hallRequests, floor)
@@ -169,7 +171,6 @@ func main() {
 			elevio.SetMotorDirection(elevio.MD_Stop)
 			e.Behavior = elevator.ElevatorBehaviorIdle
 			e.Direction = elevator.DirStop
-			hallRequests = [elevator.N_FLOORS][2]elevator.HallRequest{}
 
 		case msg := <-rxCh:
 			if msg.ID == id {
