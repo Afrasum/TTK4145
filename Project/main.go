@@ -1,15 +1,10 @@
 package main
 
-// TODO: implement stop button
-
 import (
 	"Driver-go/elevio"
 	"flag"
 	"fmt"
-	"net"
 	"os"
-	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +18,10 @@ import (
 	"sanntid/project/persistence"
 )
 
-const hallCounterN = 65535 // max value of uint16 counter
+const (
+	hallCounterN      = 65535 // max value of uint16 counter
+	heartbeatBasePort = 30000 // UDP port base for primary/backup heartbeat; port = base + id
+)
 
 func main() {
 	var id, port string
@@ -32,7 +30,12 @@ func main() {
 	flag.Parse()
 
 	if id == "" {
-		panic("--id required")
+		fmt.Fprintln(os.Stderr, "error: --id is required")
+		os.Exit(1)
+	}
+	if n, err := strconv.Atoi(id); err != nil || n < 0 || n > 99 {
+		fmt.Fprintf(os.Stderr, "error: --id must be an integer 0–99, got %q\n", id)
+		os.Exit(1)
 	}
 
 	listenForPrimary(id)
@@ -65,11 +68,15 @@ func main() {
 		}
 	}
 
-	var hallRequests [elevator.N_FLOORS][2]elevator.HallRequest
-	hasReachedN := [elevator.N_FLOORS][2]map[string]bool{}
-	for floor := range hasReachedN {
-		for btn := range hasReachedN[floor] {
-			hasReachedN[floor][btn] = make(map[string]bool)
+	var hallRequests [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest
+
+	// peersAtMaxCounter[floor][btn] tracks which peers have reported counter == hallCounterN.
+	// The counter wraps to 0 only after all known peers confirm they've seen it at max,
+	// preventing any node from misreading a newly-wrapped counter as stale.
+	peersAtMaxCounter := [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]map[string]bool{}
+	for floor := range peersAtMaxCounter {
+		for btn := range peersAtMaxCounter[floor] {
+			peersAtMaxCounter[floor][btn] = make(map[string]bool)
 		}
 	}
 
@@ -103,7 +110,7 @@ func main() {
 
 	// Async assigner: runs hall_request_assigner binary in a goroutine
 	// so the main loop is never blocked by subprocess execution.
-	assignerResultCh := make(chan [elevator.N_FLOORS][2]bool, 1)
+	assignerResultCh := make(chan [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]bool, 1)
 	assignerInFlight := false
 	needsReassign := false
 	triggerAssigner := func() {
@@ -156,7 +163,7 @@ func main() {
 				hallRequests[btn.Floor][btn.Button].Active = true
 				hallRequests[btn.Floor][btn.Button].Counter++
 				txCh <- message.FromElevator(id, e, hallRequests)
-				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
+				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
 				peerStates[id] = e
 				triggerAssigner()
 			}
@@ -174,7 +181,7 @@ func main() {
 					}
 				}
 				clearServedHall(&e, &hallRequests, floor)
-				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
+				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
 				if err := persistence.SaveCabCalls(e, id); err != nil {
 					fmt.Println("Warning:", err)
 				}
@@ -183,12 +190,12 @@ func main() {
 		case <-doorTimer.C:
 			if obstructed {
 				doorTimer.Reset(config.DoorOpenTime)
-				continue
+				continue // skip motor watchdog update below — door stays open
 			}
 			if elevator.FsmOnDoorTimeout(&e) {
 				doorTimer.Reset(config.DoorOpenTime)
 				clearServedHall(&e, &hallRequests, e.Floor)
-				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
+				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
 			}
 			if e.Behavior == elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
@@ -218,45 +225,14 @@ func main() {
 			if msg.ID == id {
 				continue
 			}
-			for floor := 0; floor < elevator.N_FLOORS; floor++ {
-				for btn := 0; btn < 2; btn++ {
-					hallRequests[floor][btn] = mergeHallRequests(hallRequests[floor][btn], msg.HallRequests[floor][btn])
-					if msg.HallRequests[floor][btn].Counter == hallCounterN {
-						hasReachedN[floor][btn][msg.ID] = true
-					} else {
-						delete(hasReachedN[floor][btn], msg.ID)
-					}
-					if hallRequests[floor][btn].Counter == hallCounterN {
-						hasReachedN[floor][btn][id] = true
-					} else {
-						delete(hasReachedN[floor][btn], id)
-					}
-					if hallRequests[floor][btn].Counter == hallCounterN {
-						hallAtN := true
-						for peerID := range peerStates {
-							if !hasReachedN[floor][btn][peerID] {
-								hallAtN = false
-								break
-							}
-						}
-						if hallAtN {
-							hallRequests[floor][btn].Counter = 0
-							hasReachedN[floor][btn] = make(map[string]bool)
-						}
-					}
-				}
-			}
-			peerStates[msg.ID] = message.ToElevator(msg)
-			peerStates[id] = e
-			elevator.SetHallLamps(confirmedHallRequests(hallRequests))
-			triggerAssigner()
+			handleRemoteMsg(msg, id, &hallRequests, &peersAtMaxCounter, peerStates, e, triggerAssigner)
 
-		case pu := <-peerUpdateCh:
-			for _, lost := range pu.Lost {
+		case peerUpdate := <-peerUpdateCh:
+			for _, lost := range peerUpdate.Lost {
 				delete(peerStates, lost)
-				for floor := range hasReachedN {
-					for btn := range hasReachedN[floor] {
-						delete(hasReachedN[floor][btn], lost)
+				for floor := range peersAtMaxCounter {
+					for btn := range peersAtMaxCounter[floor] {
+						delete(peersAtMaxCounter[floor][btn], lost)
 					}
 				}
 			}
@@ -276,7 +252,7 @@ func main() {
 			applyAssigned(&e, result, doorTimer)
 			if e.Behavior == elevator.ElevatorBehaviorDoorOpen {
 				clearServedHall(&e, &hallRequests, e.Floor)
-				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
+				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
 			}
 			if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
@@ -291,9 +267,57 @@ func main() {
 	}
 }
 
-func applyAssigned(e *elevator.Elevator, assigned [elevator.N_FLOORS][2]bool, doorTimer *time.Timer) {
+// handleRemoteMsg processes an incoming peer message: merges hall-request state,
+// updates peer state and lamp state, and triggers the hall-request assigner.
+func handleRemoteMsg(
+	msg message.ElevatorMessage,
+	localID string,
+	hallRequests *[elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest,
+	peersAtMaxCounter *[elevator.N_FLOORS][elevator.N_HALL_BUTTONS]map[string]bool,
+	peerStates map[string]elevator.Elevator,
+	localElevator elevator.Elevator,
+	triggerAssigner func(),
+) {
+	for floor := 0; floor < elevator.N_FLOORS; floor++ {
+		for btn := 0; btn < elevator.N_HALL_BUTTONS; btn++ {
+			(*hallRequests)[floor][btn] = elevator.MergeHallRequest((*hallRequests)[floor][btn], msg.HallRequests[floor][btn])
+			// Track whether this peer has seen the counter at max
+			if msg.HallRequests[floor][btn].Counter == hallCounterN {
+				(*peersAtMaxCounter)[floor][btn][msg.ID] = true
+			} else {
+				delete((*peersAtMaxCounter)[floor][btn], msg.ID)
+			}
+			// Track whether we ourselves are now at max
+			if (*hallRequests)[floor][btn].Counter == hallCounterN {
+				(*peersAtMaxCounter)[floor][btn][localID] = true
+			} else {
+				delete((*peersAtMaxCounter)[floor][btn], localID)
+			}
+			// Wrap counter to 0 once all known peers have confirmed seeing max
+			if (*hallRequests)[floor][btn].Counter == hallCounterN {
+				allAtMaxCount := true
+				for peerID := range peerStates {
+					if !(*peersAtMaxCounter)[floor][btn][peerID] {
+						allAtMaxCount = false
+						break
+					}
+				}
+				if allAtMaxCount {
+					(*hallRequests)[floor][btn].Counter = 0
+					(*peersAtMaxCounter)[floor][btn] = make(map[string]bool)
+				}
+			}
+		}
+	}
+	peerStates[msg.ID] = message.ToElevator(msg)
+	peerStates[localID] = localElevator
+	elevator.SetHallLamps(elevator.ConfirmedHallRequests(*hallRequests))
+	triggerAssigner()
+}
+
+func applyAssigned(e *elevator.Elevator, assigned [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]bool, doorTimer *time.Timer) {
 	for f := 0; f < elevator.N_FLOORS; f++ {
-		for btn := 0; btn < 2; btn++ {
+		for btn := 0; btn < elevator.N_HALL_BUTTONS; btn++ {
 			if assigned[f][btn] && !e.Requests[f][btn] {
 				if elevator.FsmOnRequestButtonPress(e, f, elevator.ButtonType(btn)) {
 					doorTimer.Reset(config.DoorOpenTime)
@@ -303,8 +327,8 @@ func applyAssigned(e *elevator.Elevator, assigned [elevator.N_FLOORS][2]bool, do
 	}
 }
 
-func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][2]elevator.HallRequest, floor int) {
-	for btn := 0; btn < 2; btn++ {
+func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest, floor int) {
+	for btn := 0; btn < elevator.N_HALL_BUTTONS; btn++ {
 		if !e.Requests[floor][btn] {
 			hallRequests[floor][btn].Active = false
 			hallRequests[floor][btn].Counter++
@@ -312,98 +336,3 @@ func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][2]e
 	}
 }
 
-func heartbeatPort(id string) string {
-	n, err := strconv.Atoi(id)
-	if err != nil {
-		panic(fmt.Sprintf("elevator id must be a number, got %q", id))
-	}
-	return fmt.Sprintf(":%d", 30000+n)
-}
-
-func listenForPrimary(id string) {
-	addr, _ := net.ResolveUDPAddr("udp", heartbeatPort(id))
-	var conn *net.UDPConn
-	for {
-		var err error
-		conn, err = net.ListenUDP("udp", addr)
-		if err == nil {
-			break
-		}
-		fmt.Println("[listenForPrimary] port busy, retrying...")
-		time.Sleep(200 * time.Millisecond)
-	}
-	defer conn.Close()
-	fmt.Println("[listenForPrimary] listening for primary heartbeat...")
-
-	buf := make([]byte, 128)
-	for {
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		n, _, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			fmt.Println("[listenForPrimary] no heartbeat, becoming primary")
-			return
-		}
-		if string(buf[:n]) == id {
-			continue
-		}
-		fmt.Printf("[listenForPrimary] heartbeat from %q, waiting...\n", string(buf[:n]))
-	}
-}
-
-func startBackup(id, port string) {
-	exe, _ := os.Executable()
-	fmt.Printf("[startBackup] spawning backup: %s --id=%s --port=%s\n", exe, id, port)
-	args := `'` + exe + `' --id=` + id + ` --port=` + port
-	var cmd *exec.Cmd
-	if runtime.GOOS == "darwin" {
-		cmd = exec.Command("osascript", "-e", `tell app "Terminal" to do script "`+args+`"`)
-	} else {
-		cmd = exec.Command("gnome-terminal", "--", "bash", "-c", args+"; read")
-	}
-	if err := cmd.Start(); err != nil {
-		fmt.Println("[startBackup] could not open terminal window:", err)
-	}
-}
-
-func sendHeartbeat(id string) {
-	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1"+heartbeatPort(id))
-	conn, _ := net.DialUDP("udp", nil, addr)
-	defer conn.Close()
-	for {
-		conn.Write([]byte(id))
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-func cyclicIsAfter(incoming, local uint16) bool {
-	if local == hallCounterN && incoming == 0 {
-		return true
-	}
-	if local == 0 && incoming == hallCounterN {
-		return false
-	}
-	return incoming > local
-}
-
-func mergeHallRequests(ours, theirs elevator.HallRequest) elevator.HallRequest {
-	if ours.Unknown {
-		return elevator.HallRequest{Active: theirs.Active, Counter: theirs.Counter, Unknown: false}
-	}
-	if ours.Counter == hallCounterN && theirs.Counter == hallCounterN {
-		return elevator.HallRequest{Active: ours.Active || theirs.Active, Counter: hallCounterN}
-	}
-	if cyclicIsAfter(theirs.Counter, ours.Counter) {
-		return theirs
-	}
-	return ours
-}
-
-func confirmedHallRequests(hallRequests [elevator.N_FLOORS][2]elevator.HallRequest) [elevator.N_FLOORS][2]bool {
-	var out [elevator.N_FLOORS][2]bool
-	for floor := range hallRequests {
-		for btn := range hallRequests[floor] {
-			out[floor][btn] = hallRequests[floor][btn].Active
-		}
-	}
-	return out
-}

@@ -1,8 +1,9 @@
 package elevator
 
 const (
-	N_FLOORS  = 4
-	N_BUTTONS = 3
+	N_FLOORS       = 4
+	N_BUTTONS      = 3
+	N_HALL_BUTTONS = 2 // hall buttons per floor: up and down
 )
 
 type (

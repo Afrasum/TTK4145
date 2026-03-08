@@ -19,7 +19,7 @@ type hraElevState struct {
 }
 
 type hraInput struct {
-	HallRequests [][2]bool               `json:"hallRequests"`
+	HallRequests [][elevator.N_HALL_BUTTONS]bool `json:"hallRequests"`
 	States       map[string]hraElevState `json:"states"`
 }
 
@@ -84,41 +84,41 @@ func binaryPath() string {
 
 // AssignHallRequests returns which hall requests localID should serve.
 func AssignHallRequests(
-	hallRequests [elevator.N_FLOORS][2]elevator.HallRequest,
+	hallRequests [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest,
 	states map[string]elevator.Elevator,
 	localID string,
-) [elevator.N_FLOORS][2]bool {
+) [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]bool {
 
 	hraStates := make(map[string]hraElevState)
 	for id, e := range states {
 		hraStates[id] = toHRAState(e)
 	}
 
-	hrSlice := make([][2]bool, elevator.N_FLOORS)
+	hrSlice := make([][elevator.N_HALL_BUTTONS]bool, elevator.N_FLOORS)
 	for f := 0; f < elevator.N_FLOORS; f++ {
-		hrSlice[f] = [2]bool{hallRequests[f][0].Active, hallRequests[f][1].Active}
+		hrSlice[f] = [elevator.N_HALL_BUTTONS]bool{hallRequests[f][0].Active, hallRequests[f][1].Active}
 	}
 
 	input := hraInput{HallRequests: hrSlice, States: hraStates}
 	jsonBytes, err := json.Marshal(input)
 	if err != nil {
 		fmt.Println("assigner: json.Marshal error:", err)
-		return [elevator.N_FLOORS][2]bool{}
+		return [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]bool{}
 	}
 
 	out, err := exec.Command(binaryPath(), "-i", string(jsonBytes)).CombinedOutput()
 	if err != nil {
 		fmt.Printf("assigner: exec error: %v\ninput: %s\noutput: %s\n", err, jsonBytes, out)
-		return [elevator.N_FLOORS][2]bool{}
+		return [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]bool{}
 	}
 
-	var result map[string][][2]bool
+	var result map[string][][elevator.N_HALL_BUTTONS]bool
 	if err = json.Unmarshal(out, &result); err != nil {
 		fmt.Println("assigner: unmarshal error:", err)
-		return [elevator.N_FLOORS][2]bool{}
+		return [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]bool{}
 	}
 
-	var assigned [elevator.N_FLOORS][2]bool
+	var assigned [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]bool
 	for f, pair := range result[localID] {
 		if f < elevator.N_FLOORS {
 			assigned[f] = pair

@@ -13,7 +13,7 @@ func setAllLights(es Elevator) {
 	}
 }
 
-func SetHallLamps(hallActive [N_FLOORS][2]bool) {
+func SetHallLamps(hallActive [N_FLOORS][N_HALL_BUTTONS]bool) {
 	for floor := range N_FLOORS {
 		elevio.SetButtonLamp(elevio.ButtonType(ButtonHallUp), floor, hallActive[floor][0])
 		elevio.SetButtonLamp(elevio.ButtonType(ButtonHallDown), floor, hallActive[floor][1])
