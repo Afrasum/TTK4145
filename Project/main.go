@@ -64,6 +64,7 @@ func main() {
 		}
 	}
 
+	// TODO: can also be func
 	var hallRequests [elevator.N_FLOORS][2]elevator.HallRequest
 	hasReachedN := [elevator.N_FLOORS][2]map[string]bool{}
 	for floor := range hasReachedN {
@@ -101,6 +102,7 @@ func main() {
 	broadcastTicker := time.NewTicker(config.BroadcastInterval)
 
 	// Trigger FSM to serve cab calls loaded from disk
+	// TODO: move to separate function
 	if err == nil {
 		for floor, active := range cab {
 			if active {
@@ -127,13 +129,13 @@ func main() {
 				}
 			} else {
 				hallRequests[btn.Floor][btn.Button].Active = true
-				hallRequests[btn.Floor][btn.Button].Counter++
-				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
+				hallRequests[btn.Floor][btn.Button].Counter++              // TODO: should we check if reset needed?
+				elevator.SetHallLamps(confirmedHallRequests(hallRequests)) // TODO: send request to peers before setting lamps
 				peerStates[id] = e
 				applyAssigned(&e, assigner.AssignHallRequests(hallRequests, peerStates, id), doorTimer)
 			}
-			if e.Behavior == elevator.ElevatorBehaviorMoving {
-				motorWatchdog.Reset(config.MotorWatchdogTime)
+			if e.Behavior == elevator.ElevatorBehaviorMoving { // TODO: im guessing this is repeated a lot, maybe func is nice
+				motorWatchdog.Reset(config.MotorWatchdogTime) // TODO: fint out what this does. but i think claude has control
 			}
 
 		case floor := <-floorCh:
@@ -159,9 +161,9 @@ func main() {
 				clearServedHall(&e, &hallRequests, e.Floor)
 				elevator.SetHallLamps(confirmedHallRequests(hallRequests))
 			}
-			if e.Behavior == elevator.ElevatorBehaviorMoving {
+			if e.Behavior == elevator.ElevatorBehaviorMoving { // TODO: should use tagged switch on e.Behavior
 				motorWatchdog.Reset(config.MotorWatchdogTime)
-			} else if e.Behavior == elevator.ElevatorBehaviorIdle {
+			} else if e.Behavior == elevator.ElevatorBehaviorIdle { // TODO: and maybe move all of this to separate function
 				if !motorWatchdog.Stop() {
 					select {
 					case <-motorWatchdog.C:
@@ -170,13 +172,13 @@ func main() {
 				}
 			}
 
-		case obs := <-obstrCh:
+		case obs := <-obstrCh: // TODO: is this triggered only once? or whathappens after doortimer reaches limit again after reaset, and we still have obstruction without new event triggering, can that happen?
 			obstructed = obs
 			if obstructed && e.Behavior == elevator.ElevatorBehaviorDoorOpen {
 				doorTimer.Reset(config.DoorOpenTime)
 			}
 
-		case <-motorWatchdog.C:
+		case <-motorWatchdog.C: // TODO: this says we crached, but do we handle it? should we kill process and let backup take over?
 			fmt.Println("Motor watchdog triggered")
 			elevio.SetMotorDirection(elevio.MD_Stop)
 			e.Behavior = elevator.ElevatorBehaviorIdle
@@ -186,8 +188,9 @@ func main() {
 			if msg.ID == id {
 				continue
 			}
-			for floor := 0; floor < elevator.N_FLOORS; floor++ {
-				for btn := 0; btn < 2; btn++ {
+			// TODO: should def move this to separate function
+			for floor := 0; floor < elevator.N_FLOORS; floor++ { // TODO: use range over int
+				for btn := 0; btn < 2; btn++ { // TODO: use range voer int
 					hallRequests[floor][btn] = mergeHallRequests(hallRequests[floor][btn], msg.HallRequests[floor][btn])
 					if msg.HallRequests[floor][btn].Counter == hallCounterN {
 						hasReachedN[floor][btn][msg.ID] = true
@@ -195,6 +198,7 @@ func main() {
 						delete(hasReachedN[floor][btn], msg.ID)
 					}
 					// Track self so barrier can trigger when we also reach N
+					// TODO: clean up, this also oculd be moved to separate functio? Also, seems like id we reached n max, we jusst cononue and might exeed max? and do we have a merge tactic if same version? then we do OR cirrect?
 					if hallRequests[floor][btn].Counter == hallCounterN {
 						hasReachedN[floor][btn][id] = true
 					} else {
@@ -278,7 +282,7 @@ func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][2]e
 	for btn := 0; btn < 2; btn++ {
 		if !e.Requests[floor][btn] {
 			hallRequests[floor][btn].Active = false
-			hallRequests[floor][btn].Counter++
+			hallRequests[floor][btn].Counter++ // TODO: should we check if reset needed?
 		}
 	}
 }
