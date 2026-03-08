@@ -8,10 +8,8 @@
   d-json/jsonx.d -w -ofhall_request_assigner
 
   # 3. Kopier til prosjektet
-  cp hall_request_assigner
-  ~/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/
-  chmod +x ~/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/ha
-  ll_request_assigner
+  cp hall_request_assigner ~/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/
+  chmod +x ~/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/hall_request_assigner
 
   Sjekk at dmd er installert først:
   which dmd
