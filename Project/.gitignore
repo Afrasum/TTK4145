@@ -1,0 +1,14 @@
+# compiled binaries
+project
+assigner/hall_request_assigner/hall_request_assigner
+assigner/hall_request_assigner/hall_request_assigner.exe
+
+# elevator state persistence
+cab_*.json
+
+# editor / IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
