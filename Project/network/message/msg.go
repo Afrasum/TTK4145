@@ -1,8 +1,12 @@
 package message
 
-import "sanntid/project/elevator"
+import (
+	"sanntid/project/config"
+	"sanntid/project/elevator"
+)
 
 type ElevatorMessage struct {
+	Token        string
 	ID           string
 	Floor        int
 	Direction    elevator.Direction
@@ -17,6 +21,7 @@ func FromElevator(id string, e elevator.Elevator, hallRequests [elevator.N_FLOOR
 		cab[f] = e.Requests[f][elevator.ButtonCab]
 	}
 	return ElevatorMessage{
+		Token:        config.GroupToken,
 		ID:           id,
 		Floor:        e.Floor,
 		Direction:    e.Direction,

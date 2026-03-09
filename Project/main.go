@@ -225,6 +225,9 @@ func main() {
 			if msg.ID == id {
 				continue
 			}
+			if msg.Token != config.GroupToken {
+				continue // silently drop messages from other groups on the same network
+			}
 			handleRemoteMsg(msg, id, &hallRequests, &peersAtMaxCounter, peerStates, e, triggerAssigner)
 
 		case peerUpdate := <-peerUpdateCh:
