@@ -125,7 +125,6 @@ func main() {
 		}
 		assignerInFlight = true
 		needsReassign = false
-		peerStates[id] = e // always use fresh local state
 		hrCopy := hallRequests // array — copied by value
 		psCopy := make(map[string]elevator.Elevator, len(peerStates))
 		for k, v := range peerStates {
@@ -175,6 +174,7 @@ func main() {
 				}
 				txCh <- message.FromElevator(id, e, hallRequests, peerIDs(peerStates))
 				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
+				peerStates[id] = e
 				triggerAssigner()
 			}
 
@@ -246,11 +246,15 @@ func main() {
 				}
 			}
 			if heardByRemote {
+				if unreachablePeers[msg.ID] {
+					fmt.Printf("[heardpeers] %s can hear us again, marking reachable\n", msg.ID)
+				}
 				delete(unreachablePeers, msg.ID)
 				delete(unreachableMissCount, msg.ID)
 			} else {
 				unreachableMissCount[msg.ID]++
-				if unreachableMissCount[msg.ID] >= unreachableThreshold {
+				if unreachableMissCount[msg.ID] >= unreachableThreshold && !unreachablePeers[msg.ID] {
+					fmt.Printf("[heardpeers] %s cannot hear us (%d consecutive), marking unreachable (HeardPeers=%v)\n", msg.ID, unreachableMissCount[msg.ID], msg.HeardPeers)
 					unreachablePeers[msg.ID] = true
 				}
 			}
@@ -295,7 +299,6 @@ func main() {
 			if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
 				motorWatchdog.Reset(config.MotorWatchdogTime)
 			}
-			txCh <- message.FromElevator(id, e, hallRequests, peerIDs(peerStates))
 			if needsReassign {
 				triggerAssigner()
 			}
