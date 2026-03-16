@@ -11,6 +11,9 @@ const (
 	BcastPort         = 16569
 	BroadcastInterval = 100 * time.Millisecond
 
+	HallRequestWatchdogTime   = 10 * time.Second
+	HallWatchdogCheckInterval = 2 * time.Second
+
 	// GroupToken is included in every broadcast message so we silently drop
 	// messages from other groups running on the same network segment.
 	GroupToken = "sanntid_gr42_xK9m"

@@ -1,5 +1,5 @@
 package main
-// TODO: redundancy, sve to multiple disks
+
 import (
 	"fmt"
 	"net"

@@ -13,9 +13,10 @@ type ElevatorMessage struct {
 	Behavior     elevator.Behavior
 	CabRequests  [elevator.N_FLOORS]bool
 	HallRequests [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest
+	HeardPeers   []string
 }
 
-func FromElevator(id string, e elevator.Elevator, hallRequests [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest) ElevatorMessage {
+func FromElevator(id string, e elevator.Elevator, hallRequests [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest, heardPeers []string) ElevatorMessage {
 	var cab [elevator.N_FLOORS]bool
 	for f := range e.Requests {
 		cab[f] = e.Requests[f][elevator.ButtonCab]
@@ -28,6 +29,7 @@ func FromElevator(id string, e elevator.Elevator, hallRequests [elevator.N_FLOOR
 		Behavior:     e.Behavior,
 		CabRequests:  cab,
 		HallRequests: hallRequests,
+		HeardPeers:   heardPeers,
 	}
 }
 

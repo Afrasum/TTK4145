@@ -100,6 +100,8 @@ func main() {
 	peerTxEnable <- true
 
 	peerStates := make(map[string]elevator.Elevator)
+	unreachablePeers := make(map[string]bool)
+	var hallRequestActivatedAt [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]time.Time
 	obstructed := false
 
 	doorTimer := time.NewTimer(0)
@@ -107,6 +109,7 @@ func main() {
 	motorWatchdog := time.NewTimer(0)
 	<-motorWatchdog.C
 	broadcastTicker := time.NewTicker(config.BroadcastInterval)
+	hallWatchdogTicker := time.NewTicker(config.HallWatchdogCheckInterval)
 
 	// Async assigner: runs hall_request_assigner binary in a goroutine
 	// so the main loop is never blocked by subprocess execution.
@@ -123,7 +126,9 @@ func main() {
 		hrCopy := hallRequests // array — copied by value
 		psCopy := make(map[string]elevator.Elevator, len(peerStates))
 		for k, v := range peerStates {
-			psCopy[k] = v
+			if !unreachablePeers[k] {
+				psCopy[k] = v
+			}
 		}
 		go func() {
 			assignerResultCh <- assigner.AssignHallRequests(hrCopy, psCopy, id)
@@ -162,7 +167,10 @@ func main() {
 			} else {
 				hallRequests[btn.Floor][btn.Button].Active = true
 				hallRequests[btn.Floor][btn.Button].Counter++
-				txCh <- message.FromElevator(id, e, hallRequests)
+				if hallRequestActivatedAt[btn.Floor][btn.Button].IsZero() {
+					hallRequestActivatedAt[btn.Floor][btn.Button] = time.Now()
+				}
+				txCh <- message.FromElevator(id, e, hallRequests, peerIDs(peerStates))
 				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
 				peerStates[id] = e
 				triggerAssigner()
@@ -180,7 +188,7 @@ func main() {
 					default:
 					}
 				}
-				clearServedHall(&e, &hallRequests, floor)
+				clearServedHall(&e, &hallRequests, &hallRequestActivatedAt, floor)
 				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
 				if err := persistence.SaveCabCalls(e, id); err != nil {
 					fmt.Println("Warning:", err)
@@ -194,7 +202,7 @@ func main() {
 			}
 			if elevator.FsmOnDoorTimeout(&e) {
 				doorTimer.Reset(config.DoorOpenTime)
-				clearServedHall(&e, &hallRequests, e.Floor)
+				clearServedHall(&e, &hallRequests, &hallRequestActivatedAt, e.Floor)
 				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
 			}
 			if e.Behavior == elevator.ElevatorBehaviorMoving {
@@ -228,11 +236,31 @@ func main() {
 			if msg.Token != config.GroupToken {
 				continue // silently drop messages from other groups on the same network
 			}
+			heardByRemote := false
+			for _, pid := range msg.HeardPeers {
+				if pid == id {
+					heardByRemote = true
+					break
+				}
+			}
+			if heardByRemote {
+				delete(unreachablePeers, msg.ID)
+			} else {
+				unreachablePeers[msg.ID] = true
+			}
 			handleRemoteMsg(msg, id, &hallRequests, &peersAtMaxCounter, peerStates, e, triggerAssigner)
+			for f := 0; f < elevator.N_FLOORS; f++ {
+				for b := 0; b < elevator.N_HALL_BUTTONS; b++ {
+					if hallRequests[f][b].Active && hallRequestActivatedAt[f][b].IsZero() {
+						hallRequestActivatedAt[f][b] = time.Now()
+					}
+				}
+			}
 
 		case peerUpdate := <-peerUpdateCh:
 			for _, lost := range peerUpdate.Lost {
 				delete(peerStates, lost)
+				delete(unreachablePeers, lost)
 				for floor := range peersAtMaxCounter {
 					for btn := range peersAtMaxCounter[floor] {
 						delete(peersAtMaxCounter[floor][btn], lost)
@@ -254,7 +282,7 @@ func main() {
 			prevBehavior := e.Behavior
 			applyAssigned(&e, result, doorTimer)
 			if e.Behavior == elevator.ElevatorBehaviorDoorOpen {
-				clearServedHall(&e, &hallRequests, e.Floor)
+				clearServedHall(&e, &hallRequests, &hallRequestActivatedAt, e.Floor)
 				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
 			}
 			if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
@@ -265,7 +293,27 @@ func main() {
 			}
 
 		case <-broadcastTicker.C:
-			txCh <- message.FromElevator(id, e, hallRequests)
+			txCh <- message.FromElevator(id, e, hallRequests, peerIDs(peerStates))
+
+		case <-hallWatchdogTicker.C:
+			now := time.Now()
+			for f := 0; f < elevator.N_FLOORS; f++ {
+				for b := 0; b < elevator.N_HALL_BUTTONS; b++ {
+					if hallRequests[f][b].Active &&
+						!hallRequestActivatedAt[f][b].IsZero() &&
+						now.Sub(hallRequestActivatedAt[f][b]) > config.HallRequestWatchdogTime {
+						fmt.Printf("[watchdog] hall request floor %d btn %d timed out — force-serving\n", f, b)
+						prevBehavior := e.Behavior
+						if elevator.FsmOnRequestButtonPress(&e, f, elevator.ButtonType(b)) {
+							doorTimer.Reset(config.DoorOpenTime)
+						}
+						if e.Behavior == elevator.ElevatorBehaviorMoving && prevBehavior != elevator.ElevatorBehaviorMoving {
+							motorWatchdog.Reset(config.MotorWatchdogTime)
+						}
+						hallRequestActivatedAt[f][b] = now
+					}
+				}
+			}
 		}
 	}
 }
@@ -330,12 +378,21 @@ func applyAssigned(e *elevator.Elevator, assigned [elevator.N_FLOORS][elevator.N
 	}
 }
 
-func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest, floor int) {
+func clearServedHall(e *elevator.Elevator, hallRequests *[elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest, timestamps *[elevator.N_FLOORS][elevator.N_HALL_BUTTONS]time.Time, floor int) {
 	for btn := 0; btn < elevator.N_HALL_BUTTONS; btn++ {
 		if !e.Requests[floor][btn] {
 			hallRequests[floor][btn].Active = false
 			hallRequests[floor][btn].Counter++
+			timestamps[floor][btn] = time.Time{}
 		}
 	}
+}
+
+func peerIDs(peerStates map[string]elevator.Elevator) []string {
+	ids := make([]string, 0, len(peerStates))
+	for id := range peerStates {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
