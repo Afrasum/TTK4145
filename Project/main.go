@@ -101,6 +101,8 @@ func main() {
 
 	peerStates := make(map[string]elevator.Elevator)
 	unreachablePeers := make(map[string]bool)
+	unreachableMissCount := make(map[string]int)
+	const unreachableThreshold = 10 // ~1s at 100ms broadcast interval
 	var hallRequestActivatedAt [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]time.Time
 	obstructed := false
 
@@ -244,9 +246,17 @@ func main() {
 				}
 			}
 			if heardByRemote {
+				if unreachablePeers[msg.ID] {
+					fmt.Printf("[heardpeers] %s can hear us again, marking reachable\n", msg.ID)
+				}
 				delete(unreachablePeers, msg.ID)
+				delete(unreachableMissCount, msg.ID)
 			} else {
-				unreachablePeers[msg.ID] = true
+				unreachableMissCount[msg.ID]++
+				if unreachableMissCount[msg.ID] >= unreachableThreshold && !unreachablePeers[msg.ID] {
+					fmt.Printf("[heardpeers] %s cannot hear us (%d consecutive), marking unreachable (HeardPeers=%v)\n", msg.ID, unreachableMissCount[msg.ID], msg.HeardPeers)
+					unreachablePeers[msg.ID] = true
+				}
 			}
 			handleRemoteMsg(msg, id, &hallRequests, &peersAtMaxCounter, peerStates, e, triggerAssigner)
 			for f := 0; f < elevator.N_FLOORS; f++ {
@@ -261,6 +271,7 @@ func main() {
 			for _, lost := range peerUpdate.Lost {
 				delete(peerStates, lost)
 				delete(unreachablePeers, lost)
+				delete(unreachableMissCount, lost)
 				for floor := range peersAtMaxCounter {
 					for btn := range peersAtMaxCounter[floor] {
 						delete(peersAtMaxCounter[floor][btn], lost)
