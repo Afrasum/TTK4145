@@ -8,7 +8,7 @@ const (
 
 	DoorOpenTime      = 3 * time.Second
 	TravelTime        = 2500 * time.Millisecond
-	MotorWatchdogTime = 5 * time.Second
+	MotorWatchdogTime = 3 * time.Second
 
 	PeerPort          = 15647
 	BcastPort         = 16569
