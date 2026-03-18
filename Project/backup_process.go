@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strconv"
 	"time"
+
+	"sanntid/project/config"
 )
 
 func heartbeatPort(id string) string {
@@ -15,7 +17,7 @@ func heartbeatPort(id string) string {
 	if err != nil {
 		panic(fmt.Sprintf("elevator id must be a number, got %q", id))
 	}
-	return fmt.Sprintf(":%d", heartbeatBasePort+n)
+	return fmt.Sprintf(":%d", config.HeartbeatBasePort+n)
 }
 
 // listenForPrimary blocks until no heartbeat is received for 3 seconds,

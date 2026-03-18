@@ -18,11 +18,6 @@ import (
 	"sanntid/project/persistence"
 )
 
-const (
-	hallCounterN      = 65535 // max value of uint16 counter
-	heartbeatBasePort = 30000 // UDP port base for primary/backup heartbeat; port = base + id
-)
-
 func main() {
 	var id, port string
 	flag.StringVar(&id, "id", "", "Unique ID for the elevator")
@@ -70,7 +65,7 @@ func main() {
 
 	var hallRequests [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]elevator.HallRequest
 
-	// peersAtMaxCounter[floor][btn] tracks which peers have reported counter == hallCounterN.
+	// peersAtMaxCounter[floor][btn] tracks which peers have reported counter == config.HallCounterN.
 	// The counter wraps to 0 only after all known peers confirm they've seen it at max,
 	// preventing any node from misreading a newly-wrapped counter as stale.
 	peersAtMaxCounter := [elevator.N_FLOORS][elevator.N_HALL_BUTTONS]map[string]bool{}
@@ -123,7 +118,7 @@ func main() {
 		}
 		assignerInFlight = true
 		needsReassign = false
-		hrCopy := hallRequests // array — copied by value
+		hrCopy := hallRequests
 		psCopy := make(map[string]elevator.Elevator, len(peerStates))
 		for k, v := range peerStates {
 			if !unreachablePeers[k] {
@@ -198,7 +193,7 @@ func main() {
 		case <-doorTimer.C:
 			if obstructed {
 				doorTimer.Reset(config.DoorOpenTime)
-				continue // skip motor watchdog update below — door stays open
+				continue
 			}
 			if elevator.FsmOnDoorTimeout(&e) {
 				doorTimer.Reset(config.DoorOpenTime)
@@ -333,19 +328,19 @@ func handleRemoteMsg(
 		for btn := 0; btn < elevator.N_HALL_BUTTONS; btn++ {
 			(*hallRequests)[floor][btn] = elevator.MergeHallRequest((*hallRequests)[floor][btn], msg.HallRequests[floor][btn])
 			// Track whether this peer has seen the counter at max
-			if msg.HallRequests[floor][btn].Counter == hallCounterN {
+			if msg.HallRequests[floor][btn].Counter == config.HallCounterN {
 				(*peersAtMaxCounter)[floor][btn][msg.ID] = true
 			} else {
 				delete((*peersAtMaxCounter)[floor][btn], msg.ID)
 			}
 			// Track whether we ourselves are now at max
-			if (*hallRequests)[floor][btn].Counter == hallCounterN {
+			if (*hallRequests)[floor][btn].Counter == config.HallCounterN {
 				(*peersAtMaxCounter)[floor][btn][localID] = true
 			} else {
 				delete((*peersAtMaxCounter)[floor][btn], localID)
 			}
 			// Wrap counter to 0 once all known peers have confirmed seeing max
-			if (*hallRequests)[floor][btn].Counter == hallCounterN {
+			if (*hallRequests)[floor][btn].Counter == config.HallCounterN {
 				allAtMaxCount := true
 				for peerID := range peerStates {
 					if !(*peersAtMaxCounter)[floor][btn][peerID] {
@@ -395,4 +390,3 @@ func peerIDs(peerStates map[string]elevator.Elevator) []string {
 	}
 	return ids
 }
-

@@ -3,6 +3,9 @@ package config
 import "time"
 
 const (
+	HallCounterN      = 65535 // max value of uint16 counter
+	HeartbeatBasePort = 30000 // UDP port base for primary/backup heartbeat; port = base + id
+
 	DoorOpenTime      = 3 * time.Second
 	TravelTime        = 2500 * time.Millisecond
 	MotorWatchdogTime = 5 * time.Second

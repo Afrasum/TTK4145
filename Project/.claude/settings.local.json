@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cd:*)",
-      "Bash(cd \"/Users/afras/Documents/NTNU/V26/TTK4145 Sanntidsprogrammering/Project/simulator\" && go build -o /dev/null main.go 2>&1)",
-      "Bash(cd \"/Users/afras/Documents/NTNU/V26/TTK4145 Sanntidsprogrammering/Project/simulator\" && go vet main.go 2>&1)"
-    ]
-  }
-}
