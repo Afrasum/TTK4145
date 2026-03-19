@@ -32,3 +32,6 @@ dmd main.d config.d elevator_algorithm.d elevator_state.d optimal_hall_requests.
   d-json/jsonx.d -w -ofhall_request_assigner
 
 sudo bash packetloss.sh 20 -i 15647 16569
+
+
+
