@@ -4,6 +4,8 @@
 
 "Create software for controlling `n` elevators working in parallel across `m` floors."
 
+Our solution uses UDP communication between elevators and peer-to-peer architecture between the elevators. 
+
 
 ## Modules
 -------------------------------
