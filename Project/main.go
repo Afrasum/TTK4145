@@ -15,7 +15,7 @@ import (
 	"sanntid/project/network/bcast"
 	"sanntid/project/network/message"
 	"sanntid/project/network/peers"
-	"sanntid/project/persistence"
+	"sanntid/project/backup"
 )
 
 func main() {
@@ -33,9 +33,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	listenForPrimary(id)
+	backup.ListenForPrimary(id)
 	fmt.Printf("[main] became primary (id=%s)\n", id)
-	startBackup(id, port)
+	backup.StartBackup(id, port)
 
 	// Accept plain port number or full host:port
 	if !strings.Contains(port, ":") {
@@ -54,7 +54,7 @@ func main() {
 		elevator.FsmOnInitBetweenFloors(&e)
 	}
 
-	cab, err := persistence.LoadCabCalls(id)
+	cab, err := backup.LoadCabCalls(id)
 	if err == nil {
 		for floor := range cab {
 			if cab[floor] {
@@ -83,7 +83,7 @@ func main() {
 	peerUpdateCh := make(chan peers.PeerUpdate)
 	peerTxEnable := make(chan bool)
 
-	go sendHeartbeat(id)
+	go backup.SendHeartbeat(id)
 	go elevio.PollButtons(buttonCh)
 	go elevio.PollFloorSensor(floorCh)
 	go elevio.PollObstructionSwitch(obstrCh)
@@ -150,7 +150,7 @@ func main() {
 			if elevator.ButtonType(btn.Button) == elevator.ButtonCab {
 				prevBehavior := e.Behavior
 				e.Requests[btn.Floor][elevator.ButtonCab] = true
-				if err := persistence.SaveCabCalls(e, id); err != nil {
+				if err := backup.SaveCabCalls(e, id); err != nil {
 					fmt.Println("Warning:", err)
 				}
 				if elevator.FsmOnRequestButtonPress(&e, btn.Floor, elevator.ButtonCab) {
@@ -185,7 +185,7 @@ func main() {
 				}
 				clearServedHall(&e, &hallRequests, &hallRequestActivatedAt, floor)
 				elevator.SetHallLamps(elevator.ConfirmedHallRequests(hallRequests))
-				if err := persistence.SaveCabCalls(e, id); err != nil {
+				if err := backup.SaveCabCalls(e, id); err != nil {
 					fmt.Println("Warning:", err)
 				}
 			}

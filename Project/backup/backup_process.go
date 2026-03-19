@@ -1,4 +1,4 @@
-package main
+package backup
 
 import (
 	"fmt"
@@ -20,9 +20,9 @@ func heartbeatPort(id string) string {
 	return fmt.Sprintf(":%d", config.HeartbeatBasePort+n)
 }
 
-// listenForPrimary blocks until no heartbeat is received for 3 seconds,
+// ListenForPrimary blocks until no heartbeat is received for 3 seconds,
 // at which point this process becomes primary.
-func listenForPrimary(id string) {
+func ListenForPrimary(id string) {
 	addr, err := net.ResolveUDPAddr("udp", heartbeatPort(id))
 	if err != nil {
 		panic(fmt.Sprintf("[listenForPrimary] ResolveUDPAddr: %v", err))
@@ -54,8 +54,8 @@ func listenForPrimary(id string) {
 	}
 }
 
-// startBackup spawns a new terminal window running this same executable as backup.
-func startBackup(id, port string) {
+// StartBackup spawns a new terminal window running this same executable as backup.
+func StartBackup(id, port string) {
 	exe, _ := os.Executable()
 	fmt.Printf("[startBackup] spawning backup: %s --id=%s --port=%s\n", exe, id, port)
 	args := `'` + exe + `' --id=` + id + ` --port=` + port
@@ -70,8 +70,8 @@ func startBackup(id, port string) {
 	}
 }
 
-// sendHeartbeat broadcasts this process's ID over UDP so the backup knows a primary is alive.
-func sendHeartbeat(id string) {
+// SendHeartbeat broadcasts this process's ID over UDP so the backup knows a primary is alive.
+func SendHeartbeat(id string) {
 	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1"+heartbeatPort(id))
 	if err != nil {
 		panic(fmt.Sprintf("[sendHeartbeat] ResolveUDPAddr: %v", err))
