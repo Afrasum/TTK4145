@@ -4,8 +4,7 @@
   cd Project-resources/cost_fns/hall_request_assigner
 
   # 2. Kompiler
-  dmd main.d config.d elevator_algorithm.d elevator_state.d optimal_hall_requests.d
-  d-json/jsonx.d -w -ofhall_request_assigner
+  dmd main.d config.d elevator_algorithm.d elevator_state.d optimal_hall_requests.d d-json/jsonx.d -w -ofhall_request_assigner
 
   # 3. Kopier til prosjektet
   cp hall_request_assigner ~/Desktop/AfrasAdneTuang/TTK4145/Project/assigner/hall_request_assigner/
